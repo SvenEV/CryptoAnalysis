@@ -117,6 +117,10 @@ public class AnalysisSeedWithSpecification extends IAnalysisSeed {
 		if(results == null)
 			//Timeout occured.
 			return;
+
+		// SVEN
+		SvensMetricsCollector.INSTANCE.run(stmt(), getMethod().getActiveBody(), results, this.cryptoScanner.icfg());
+
 		allCallsOnObject = results.getInvokedMethodOnInstance();
 		runExtractParameterAnalysis();
 		checkInternalConstraints();

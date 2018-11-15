@@ -51,7 +51,7 @@ public class MavenJarTests {
 	public final static String MAVEN_PREFIX = "http://central.maven.org/maven2/";
 	private String currentDirectory = System.getProperty("user.dir");
 	public final static String DEFAULT_DOWNLOADS_FOLDER = "mavenDownloads";
-	private static boolean VISUALIZATION = false;
+	private static boolean VISUALIZATION = true;
 	private CrySLAnalysisListener errorCountingAnalysisListener;
 	private Table<String, Class<?>, Integer> errorMarkerCountPerErrorTypeAndMethod = HashBasedTable.create();
 	private MavenJar currentJarBeingTested;
@@ -103,6 +103,11 @@ public class MavenJarTests {
 			@Override
 			public void discoveredSeed(IAnalysisSeed curr) {
 
+			}
+
+			@Override
+			public void onSecureObjectFound(IAnalysisSeed analysisObject) {
+				// SVEN
 			}
 
 			@Override
