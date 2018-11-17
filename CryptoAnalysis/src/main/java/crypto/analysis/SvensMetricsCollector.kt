@@ -8,15 +8,23 @@ import soot.jimple.toolkits.ide.icfg.BiDiInterproceduralCFG
 
 object SvensMetricsCollector {
 
-    fun run(stmt: Statement, body: Body, icfg: BiDiInterproceduralCFG<Unit, SootMethod>) {
-        println("SVEN: ${stmt}")
+    fun run(seedStmt: Statement, callStmts: Iterable<Statement>, body: Body, icfg: BiDiInterproceduralCFG<Unit, SootMethod>) {
+        println("SVEN: ${seedStmt}")
 
-        val enclosingIfs = enclosingIfs(stmt.unit.get(), body, icfg).toList()
+        val enclosingIfs = enclosingIfs(body.units.first, seedStmt.unit.get(), body, icfg).toList()
 
+        val conditionsPerCallStmt = (callStmts.toList() - seedStmt)
+                .associateWith { enclosingIfs(seedStmt.unit.get(), it.unit.get(), body, icfg).toList() }
+
+        // TODO: Analyze the if-conditions (in particular, find out whether the statement lies in the true or the false branch)
         if (enclosingIfs.isNotEmpty()) {
-            println("Seed is enclosed in ${enclosingIfs.size} if-statements")
-            enclosingIfs.forEach { println("    $it") }
-            // TODO: Analyze the if-conditions
+            println("    Seed is enclosed in ${enclosingIfs.size} if-statements")
+            enclosingIfs.forEach { println("        $it") }
+        }
+
+        for (call in conditionsPerCallStmt.filter { it.value.any() }) {
+            println("    Call '${call.key}' is enclosed in ${call.value.size} if-statements")
+            call.value.forEach { println("        $it") }
         }
     }
 
@@ -79,17 +87,17 @@ object SvensMetricsCollector {
     fun Sequence<Unit>.filterIrrelevantIfs(body: Body, icfg: BiDiInterproceduralCFG<Unit, SootMethod>) =
             zipWithNext { a, b ->
                 if (a.branches() && actualPreds(b, body, icfg).size > 1)
-                    // if-statement followed by a "merge point" => remove if statement
+                // if-statement followed by a "merge point" => remove if statement
                     emptyList()
                 else
-                    // otherwise => keep statement
+                // otherwise => keep statement
                     listOf(a)
             }.flatten()
 
-    fun enclosingIfs(stmt: Unit, body: Body, icfg: BiDiInterproceduralCFG<Unit, SootMethod>) =
-        allPaths(body.units.first, stmt, body, icfg).toList()
-                .commonStatements()
-                .filterIrrelevantIfs(body, icfg)
-                .filterIsInstance<IfStmt>()
+    fun enclosingIfs(start: Unit, end: Unit, body: Body, icfg: BiDiInterproceduralCFG<Unit, SootMethod>) =
+            allPaths(start, end, body, icfg).toList()
+                    .commonStatements()
+                    .filterIrrelevantIfs(body, icfg)
+                    .filterIsInstance<IfStmt>()
 }
 
