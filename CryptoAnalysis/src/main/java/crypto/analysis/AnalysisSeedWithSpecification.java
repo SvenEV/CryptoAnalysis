@@ -119,7 +119,7 @@ public class AnalysisSeedWithSpecification extends IAnalysisSeed {
 			return;
 
 		// SVEN
-		SvensMetricsCollector.INSTANCE.run(stmt(), getMethod().getActiveBody(), results, this.cryptoScanner.icfg());
+		SvensMetricsCollector.INSTANCE.run(stmt(), getMethod().getActiveBody(), this.cryptoScanner.icfg());
 
 		allCallsOnObject = results.getInvokedMethodOnInstance();
 		runExtractParameterAnalysis();
