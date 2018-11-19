@@ -1,9 +1,14 @@
 package crypto.analysis
 
+import boomerang.BackwardQuery
+import boomerang.Boomerang
+import boomerang.BoomerangOptions
 import boomerang.jimple.Statement
+import boomerang.jimple.Val
 import soot.*
 import soot.Unit
-import soot.jimple.IfStmt
+import soot.jimple.*
+import soot.jimple.internal.JimpleLocal
 import soot.jimple.toolkits.ide.icfg.BiDiInterproceduralCFG
 
 object SvensMetricsCollector {
@@ -19,12 +24,12 @@ object SvensMetricsCollector {
         // TODO: Analyze the if-conditions (in particular, find out whether the statement lies in the true or the false branch)
         if (enclosingIfs.isNotEmpty()) {
             println("    Seed is enclosed in ${enclosingIfs.size} if-statements")
-            enclosingIfs.forEach { println("        $it") }
+            enclosingIfs.forEach { println("        ${it.condition} @ ${it.unit}") }
         }
 
         for (call in conditionsPerCallStmt.filter { it.value.any() }) {
             println("    Call '${call.key}' is enclosed in ${call.value.size} if-statements")
-            call.value.forEach { println("        $it") }
+            call.value.forEach { println("        ${it.condition} @ ${it.unit}") }
         }
     }
 
@@ -99,5 +104,68 @@ object SvensMetricsCollector {
                     .commonStatements()
                     .filterIrrelevantIfs(body, icfg)
                     .filterIsInstance<IfStmt>()
+                    .map { createIfStmtInfo(it, body, icfg) }
+
+    fun createIfStmtInfo(stmt: IfStmt, body: Body, icfg: BiDiInterproceduralCFG<Unit, SootMethod>): IfStmtInfo {
+        val usedValues = stmt.condition.useBoxes.map { it.value }
+        return when (stmt.condition) {
+            is EqExpr, is NeExpr -> {
+                val local = usedValues.filterIsInstance<Local>().firstOrNull()
+                val nullConstant = usedValues.filterIsInstance<NullConstant>().firstOrNull()
+
+                if (local != null) {
+                    val allocationSites = allocationSites(local, stmt, body).toList()
+                    println()
+                }
+
+                val conditionInfo =
+                        if (local != null && nullConstant != null)
+                            NullCheck(local.type)
+                        else
+                            EqualityCheck(usedValues.first().type, usedValues.filterIsInstance<Constant>().first())
+
+                IfStmtInfo(stmt, conditionInfo)
+            }
+            is GtExpr, is GeExpr, is LtExpr, is LeExpr -> {
+                val type = usedValues.first().type
+                val constant = usedValues.filterIsInstance<Constant>().first()
+                IfStmtInfo(stmt, Comparison(type, constant))
+            }
+            else -> IfStmtInfo(stmt, OtherCondition)
+        }
+    }
+
+    // a very basic, intra-procedural, imprecise, but alias-aware way to find allocation sites of a local
+    // (in the future we'd like to use Boomerang instead)
+    fun allocationSites(local: Local, stmt: Unit, body: Body): Sequence<AssignStmt> =
+        body.units.asSequence().between(body.units.first, stmt)
+                .filterIsInstance<AssignStmt>()
+                .filter { it.leftOp === local }
+                .flatMap {
+                    when (it.rightOp) {
+                        is Local -> allocationSites(it.rightOp as Local, it, body)
+                        is CastExpr -> when (val op = (it.rightOp as CastExpr).op) {
+                            is Local -> allocationSites(op, it, body)
+                            else -> sequenceOf(it)
+                        }
+                        else -> sequenceOf(it)
+                    }
+                }
+
+    data class IfStmtInfo(val unit: IfStmt, val condition: IfCondition)
 }
 
+sealed class IfCondition
+data class NullCheck(val type: Type) : IfCondition() {
+    override fun toString() = "Null-check on '$type'"
+}
+
+data class EqualityCheck(val type: Type, val constant: Value) : IfCondition() {
+    override fun toString() = "Equality-check of type '$type' with '$constant'"
+}
+
+data class Comparison(val type: Type, val constant: Value) : IfCondition() {
+    override fun toString() = "Comparison of type '$type' with '$constant'"
+}
+
+object OtherCondition : IfCondition()
