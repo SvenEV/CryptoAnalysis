@@ -58,8 +58,7 @@ public class CommandLineReporter extends ErrorMarkerListener {
 			s += String.format("\t\tSecure: %s\n", secureObjects.contains(r));
 		}
 		
-		
-		s += "\n";
+//		s += "\n";
 		for (SootClass c : this.errorMarkers.rowKeySet()) {
 			s += String.format("Findings in Java Class: %s\n", c.getName());
 			for (Entry<SootMethod, Set<AbstractError>> e : this.errorMarkers.row(c).entrySet()) {

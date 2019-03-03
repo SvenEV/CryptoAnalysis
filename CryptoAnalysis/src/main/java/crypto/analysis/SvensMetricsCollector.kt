@@ -1,20 +1,20 @@
 package crypto.analysis
 
-import boomerang.BackwardQuery
-import boomerang.Boomerang
-import boomerang.BoomerangOptions
 import boomerang.jimple.Statement
-import boomerang.jimple.Val
 import soot.*
 import soot.Unit
 import soot.jimple.*
-import soot.jimple.internal.JimpleLocal
 import soot.jimple.toolkits.ide.icfg.BiDiInterproceduralCFG
+import java.io.PrintWriter
+import java.io.StringWriter
 
 object SvensMetricsCollector {
 
     fun run(seedStmt: Statement, callStmts: Iterable<Statement>, body: Body, icfg: BiDiInterproceduralCFG<Unit, SootMethod>) {
-        println("SVEN: ${seedStmt}")
+        Markdown.olItem("**`${seedStmt}`**")
+
+        if (seedStmt.toString() == "<com.springcryptoutils.core.cipher.asymmetric.Base64EncodedCiphererImpl: java.lang.String encrypt(java.lang.String)> getInstance(\$r5)")
+            println()
 
         val enclosingIfs = enclosingIfs(body.units.first, seedStmt.unit.get(), body, icfg).toList()
 
@@ -22,14 +22,22 @@ object SvensMetricsCollector {
                 .associateWith { enclosingIfs(seedStmt.unit.get(), it.unit.get(), body, icfg).toList() }
 
         // TODO: Analyze the if-conditions (in particular, find out whether the statement lies in the true or the false branch)
-        if (enclosingIfs.isNotEmpty()) {
-            println("    Seed is enclosed in ${enclosingIfs.size} if-statements")
-            enclosingIfs.forEach { println("        ${it.condition} @ ${it.unit}") }
-        }
+        Markdown.tab {
+            if (enclosingIfs.isNotEmpty() || true) {
+                val numIfs = seedStmt.method.activeBody.units.filterIsInstance<IfStmt>().count()
+                Markdown.ulItem("${enclosingIfs.size} ifs enclosing seed `$seedStmt` ($numIfs ifs in method)")
+                Markdown.tab.ul(enclosingIfs.map { "${it.condition} at `${it.unit}`" })
+            }
 
-        for (call in conditionsPerCallStmt.filter { it.value.any() }) {
-            println("    Call '${call.key}' is enclosed in ${call.value.size} if-statements")
-            call.value.forEach { println("        ${it.condition} @ ${it.unit}") }
+            for (call in conditionsPerCallStmt) {
+                val numIfs = call.key.method.activeBody.units.filterIsInstance<IfStmt>().count()
+                Markdown.ulItem("${call.value.size} ifs enclosing call `${call.key}` ($numIfs ifs in method)")
+                Markdown.tab.ul(call.value.map { "${it.condition} at `${it.unit}`" })
+            }
+
+            val sw = StringWriter()
+            Printer.v().printTo(body, PrintWriter(sw))
+//            Markdown.codeBlock(sw.buffer.toString())
         }
     }
 
@@ -115,7 +123,6 @@ object SvensMetricsCollector {
 
                 if (local != null) {
                     val allocationSites = allocationSites(local, stmt, body).toList()
-                    println()
                 }
 
                 val conditionInfo =
@@ -128,8 +135,11 @@ object SvensMetricsCollector {
             }
             is GtExpr, is GeExpr, is LtExpr, is LeExpr -> {
                 val type = usedValues.first().type
-                val constant = usedValues.filterIsInstance<Constant>().first()
-                IfStmtInfo(stmt, Comparison(type, constant))
+                val constant = usedValues.filterIsInstance<Constant>().firstOrNull()
+                return if (constant == null)
+                    IfStmtInfo(stmt, OtherCondition)
+                else
+                    IfStmtInfo(stmt, Comparison(type, constant))
             }
             else -> IfStmtInfo(stmt, OtherCondition)
         }
@@ -138,19 +148,19 @@ object SvensMetricsCollector {
     // a very basic, intra-procedural, imprecise, but alias-aware way to find allocation sites of a local
     // (in the future we'd like to use Boomerang instead)
     fun allocationSites(local: Local, stmt: Unit, body: Body): Sequence<AssignStmt> =
-        body.units.asSequence().between(body.units.first, stmt)
-                .filterIsInstance<AssignStmt>()
-                .filter { it.leftOp === local }
-                .flatMap {
-                    when (it.rightOp) {
-                        is Local -> allocationSites(it.rightOp as Local, it, body)
-                        is CastExpr -> when (val op = (it.rightOp as CastExpr).op) {
-                            is Local -> allocationSites(op, it, body)
+            body.units.asSequence().between(body.units.first, stmt)
+                    .filterIsInstance<AssignStmt>()
+                    .filter { it.leftOp === local }
+                    .flatMap {
+                        when (it.rightOp) {
+                            is Local -> allocationSites(it.rightOp as Local, it, body)
+                            is CastExpr -> when (val op = (it.rightOp as CastExpr).op) {
+                                is Local -> allocationSites(op, it, body)
+                                else -> sequenceOf(it)
+                            }
                             else -> sequenceOf(it)
                         }
-                        else -> sequenceOf(it)
                     }
-                }
 
     data class IfStmtInfo(val unit: IfStmt, val condition: IfCondition)
 }

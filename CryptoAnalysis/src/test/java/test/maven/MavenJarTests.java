@@ -8,6 +8,7 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 
+import crypto.analysis.*;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.io.FileUtils;
 import org.junit.After;
@@ -28,10 +29,6 @@ import boomerang.jimple.Statement;
 import boomerang.jimple.Val;
 import boomerang.results.ForwardBoomerangResults;
 import crypto.HeadlessCryptoScanner;
-import crypto.analysis.AnalysisSeedWithSpecification;
-import crypto.analysis.CrySLAnalysisListener;
-import crypto.analysis.EnsuredCryptSLPredicate;
-import crypto.analysis.IAnalysisSeed;
 import crypto.analysis.errors.AbstractError;
 import crypto.analysis.errors.ConstraintError;
 import crypto.analysis.errors.ImpreciseValueExtractionError;
@@ -79,7 +76,7 @@ public class MavenJarTests {
 					currCount = errorMarkerCountPerErrorTypeAndMethod
 							.get(error.getErrorLocation().getMethod().toString(), error.getClass());
 				}
-				System.out.println(error.getErrorLocation().getMethod() + "  "+error);
+//				System.out.println(error.getErrorLocation().getMethod() + "  "+error);
 				Integer newCount = --currCount;
 				errorMarkerCountPerErrorTypeAndMethod.put(error.getErrorLocation().getMethod().toString(),
 						error.getClass(), newCount);
@@ -219,7 +216,9 @@ public class MavenJarTests {
 	
 	@Test
 	public void jarTest() throws ParseException, MalformedURLException, IOException, ClassNotFoundException {
-		System.out.println(currentJarBeingTested.groupId + "\n");
+		MarkdownKt.Markdown.quote().redirectSystemOut();
+		MarkdownKt.Markdown.quote().redirectSystemErr();
+		MarkdownKt.Markdown.h1(currentJarBeingTested.groupId);
 		
 		String jarFileName = currentJarBeingTested.artifactId.concat("-").concat(currentJarBeingTested.version).concat(".jar");
 		downloadJar(currentJarBeingTested.groupId, currentJarBeingTested.artifactId, currentJarBeingTested.version, jarFileName);

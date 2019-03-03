@@ -138,19 +138,19 @@ public abstract class HeadlessCryptoScanner {
 		if(PRE_ANALYSIS){
 			initializeSootWithEntryPointAllReachable(false);
 			long elapsed = stopwatch.elapsed(TimeUnit.SECONDS);
-			System.out.println("Pre-analysis soot setup done after " + elapsed +" seconds");
+//			System.out.println("Pre-analysis soot setup done after " + elapsed +" seconds");
 			checkIfUsesObject();
 			elapsed = stopwatch.elapsed(TimeUnit.SECONDS);
-			System.out.println("Pre-analysis finished after " + elapsed +" seconds");
+//			System.out.println("Pre-analysis finished after " + elapsed +" seconds");
 		}
 		if (!PRE_ANALYSIS || hasSeeds()) {
-			System.out.println("Using call graph algorithm " + callGraphAlogrithm());
+//			System.out.println("Using call graph algorithm " + callGraphAlogrithm());
 			initializeSootWithEntryPointAllReachable(true);
 			long elapsed = stopwatch.elapsed(TimeUnit.SECONDS);
-			System.out.println("Analysis soot setup done after " + elapsed +" seconds");
+//			System.out.println("Analysis soot setup done after " + elapsed +" seconds");
 			analyse();
 			elapsed = stopwatch.elapsed(TimeUnit.SECONDS);
-			System.out.println("Analysis finished after " + elapsed +" seconds");
+//			System.out.println("Analysis finished after " + elapsed +" seconds");
 		}
 	}
 
@@ -304,7 +304,7 @@ public abstract class HeadlessCryptoScanner {
 		Options.v().set_exclude(getExcludeList());
 		Options.v().set_full_resolver(true);
 		Scene.v().loadNecessaryClasses();
-		System.out.println("Finished initializing soot");
+//		System.out.println("Finished initializing soot");
 	}
 
 	private List<String> getExcludeList() {
