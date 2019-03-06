@@ -258,7 +258,13 @@ public class ConstraintSolver {
 							for (Type t : vals) {
 								if (t.toQuotedString().equals(parameters.get(1).getName())) {
 									//TODO: Fix NeverTypeOfErrors also report a ConstraintError
-									ArrayList<Statement> dataFlowStatements = null; // TODO: Determine relevant statements
+
+									// Obtain statements along data flow path ("relevant statements")
+									// TODO: Which of the additionalBoomerangQueries do we need? The first? All of them? What if there are multiple alloc sites?
+									ExtractParameterAnalysis.AdditionalBoomerangQuery boomerangQuery = boomerangQueries.stream().findFirst().get();
+									PathConditionsQuery query = new PathConditionsQuery(boomerangQuery.var().value(), cs.stmt().getUnit().get(), boomerangQuery.stmt().getMethod(), site -> true);
+									ArrayList<Statement> dataFlowStatements = RelevantStatementsExtractorKt.extractRelevantStatements(boomerangQuery.getResult(), query);
+
 									errors.add(new NeverTypeOfError(new CallSiteWithExtractedValue(cs, null, dataFlowStatements), classSpec.getRule(), object, pred));
 									return;
 								}
