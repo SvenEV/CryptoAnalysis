@@ -10,3 +10,6 @@ AndroidZooApps/
 shippable/
 *.class
 *.temp
+bin/
+cognicrypt-output/
+mavenDownloads/

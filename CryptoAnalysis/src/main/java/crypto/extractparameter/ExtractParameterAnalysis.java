@@ -1,15 +1,5 @@
 package crypto.extractparameter;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Multimap;
-import com.google.common.collect.Sets;
-
 import boomerang.BackwardQuery;
 import boomerang.Boomerang;
 import boomerang.ForwardQuery;
@@ -17,6 +7,10 @@ import boomerang.jimple.AllocVal;
 import boomerang.jimple.Statement;
 import boomerang.jimple.Val;
 import boomerang.results.BackwardBoomerangResults;
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
 import crypto.analysis.CryptoScanner;
 import crypto.boomerang.CogniCryptIntAndStringBoomerangOptions;
 import crypto.rules.CryptSLMethod;
@@ -24,15 +18,17 @@ import crypto.typestate.CryptSLMethodToSootMethod;
 import crypto.typestate.LabeledMatcherTransition;
 import crypto.typestate.SootBasedStateMachineGraph;
 import heros.utilities.DefaultValueMap;
-import soot.Local;
-import soot.SootMethod;
-import soot.Type;
-import soot.Unit;
-import soot.Value;
+import soot.*;
 import soot.jimple.Stmt;
 import soot.jimple.toolkits.ide.icfg.BiDiInterproceduralCFG;
 import typestate.finiteautomata.MatcherTransition;
 import wpds.impl.Weight.NoWeight;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
 
 public class ExtractParameterAnalysis {
 
@@ -59,7 +55,7 @@ public class ExtractParameterAnalysis {
 		}
 	}
 
-	public void run() {
+	public Set<AdditionalBoomerangQuery> run() {
 		for(Entry<Statement, SootMethod> callSiteWithCallee : allCallsOnObject.entrySet()) {
 			Statement callSite = callSiteWithCallee.getKey();
 			SootMethod declaredCallee = callSiteWithCallee.getValue();
@@ -80,6 +76,8 @@ public class ExtractParameterAnalysis {
 //				reports.boomerangQueryFinished(query, q);
 //			}
 		}
+
+		return additionalBoomerangQuery.keySet();
 	}
 	public Multimap<CallSiteWithParamIndex, ExtractedValue> getCollectedValues() {
 		return collectedValues;
@@ -92,7 +90,7 @@ public class ExtractParameterAnalysis {
 	public Collection<CallSiteWithParamIndex> getAllQuerySites() {
 		return querySites;
 	}
-	
+
 	private void injectQueryAtCallSite(List<CryptSLMethod> list, Statement callSite) {
 		if(!callSite.isCallsite())
 			return;
@@ -168,6 +166,10 @@ public class ExtractParameterAnalysis {
 		protected boolean solved;
 		private List<QueryListener> listeners = Lists.newLinkedList();
 		private BackwardBoomerangResults<NoWeight> res;
+
+		public BackwardBoomerangResults<NoWeight> getResult() {
+			return res;
+		}
 
 		public void solve() {
 			Boomerang boomerang = new Boomerang(new CogniCryptIntAndStringBoomerangOptions()) {

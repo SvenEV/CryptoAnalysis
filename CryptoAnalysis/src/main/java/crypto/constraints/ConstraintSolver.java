@@ -1,54 +1,33 @@
 package crypto.constraints;
 
-import java.util.AbstractMap;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-
+import boomerang.jimple.Statement;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
-
-import boomerang.jimple.Statement;
 import crypto.analysis.AnalysisSeedWithSpecification;
 import crypto.analysis.ClassSpecification;
 import crypto.analysis.CrySLResultsReporter;
 import crypto.analysis.RequiredCryptSLPredicate;
-import crypto.analysis.errors.AbstractError;
-import crypto.analysis.errors.ConstraintError;
-import crypto.analysis.errors.ForbiddenMethodError;
-import crypto.analysis.errors.ImpreciseValueExtractionError;
-import crypto.analysis.errors.NeverTypeOfError;
+import crypto.analysis.errors.*;
 import crypto.extractparameter.CallSiteWithExtractedValue;
 import crypto.extractparameter.CallSiteWithParamIndex;
+import crypto.extractparameter.ExtractParameterAnalysis;
 import crypto.extractparameter.ExtractedValue;
 import crypto.interfaces.ICryptSLPredicateParameter;
 import crypto.interfaces.ISLConstraint;
-import crypto.rules.CryptSLArithmeticConstraint;
-import crypto.rules.CryptSLComparisonConstraint;
-import crypto.rules.CryptSLConstraint;
+import crypto.pathconditions.PathConditionsQuery;
+import crypto.pathconditions.boomerang.RelevantStatementsExtractorKt;
+import crypto.rules.*;
 import crypto.rules.CryptSLConstraint.LogOps;
-import crypto.rules.CryptSLMethod;
-import crypto.rules.CryptSLObject;
-import crypto.rules.CryptSLPredicate;
-import crypto.rules.CryptSLSplitter;
-import crypto.rules.CryptSLValueConstraint;
 import crypto.typestate.CryptSLMethodToSootMethod;
 import soot.IntType;
 import soot.SootMethod;
 import soot.Type;
 import soot.Value;
-import soot.jimple.AssignStmt;
-import soot.jimple.Constant;
-import soot.jimple.IntConstant;
-import soot.jimple.LongConstant;
-import soot.jimple.Stmt;
-import soot.jimple.StringConstant;
+import soot.jimple.*;
+
+import java.util.*;
+import java.util.Map.Entry;
 
 public class ConstraintSolver {
 
@@ -56,6 +35,7 @@ public class ConstraintSolver {
 	private final Set<ISLConstraint> relConstraints = Sets.newHashSet();
 	private final List<RequiredCryptSLPredicate> requiredPredicates = Lists.newArrayList();
 	private final Collection<Statement> collectedCalls;
+	private final Set<ExtractParameterAnalysis.AdditionalBoomerangQuery> boomerangQueries; // from ExtractParameterAnalysis
 	private final Multimap<CallSiteWithParamIndex, ExtractedValue> parsAndVals;
 	public final static List<String> predefinedPreds = Arrays.asList("callTo", "noCallTo", "neverTypeOf", "length");
 	private final CrySLResultsReporter reporter;
@@ -64,13 +44,14 @@ public class ConstraintSolver {
 	private Collection<CallSiteWithParamIndex> parameterAnalysisQuerySites;
 	private Multimap<CallSiteWithParamIndex, Type> propagatedTypes;
 
-	public ConstraintSolver(AnalysisSeedWithSpecification object, Collection<Statement> collectedCalls, CrySLResultsReporter crySLResultsReporter) {
+	public ConstraintSolver(AnalysisSeedWithSpecification object, Collection<Statement> collectedCalls, Set<ExtractParameterAnalysis.AdditionalBoomerangQuery> boomerangQueries, CrySLResultsReporter crySLResultsReporter) {
 		this.object = object;
 		this.classSpec = object.getSpec();
 		this.parsAndVals = object.getParameterAnalysis().getCollectedValues();
 		this.propagatedTypes = object.getParameterAnalysis().getPropagatedTypes();
 		this.parameterAnalysisQuerySites = object.getParameterAnalysis().getAllQuerySites();
 		this.collectedCalls = collectedCalls;
+		this.boomerangQueries = boomerangQueries;
 		this.allConstraints = this.classSpec.getRule().getConstraints();
 		for (ISLConstraint cons : allConstraints) {
 
@@ -276,8 +257,9 @@ public class ConstraintSolver {
 							Collection<Type> vals = propagatedTypes.get(cs);
 							for (Type t : vals) {
 								if (t.toQuotedString().equals(parameters.get(1).getName())) {
-									//TODO: Fix NeverTypeOfErrors also report a ConstraintError									
-									errors.add(new NeverTypeOfError(new CallSiteWithExtractedValue(cs, null), classSpec.getRule(), object, pred));
+									//TODO: Fix NeverTypeOfErrors also report a ConstraintError
+									ArrayList<Statement> dataFlowStatements = null; // TODO: Determine relevant statements
+									errors.add(new NeverTypeOfError(new CallSiteWithExtractedValue(cs, null, dataFlowStatements), classSpec.getRule(), object, pred));
 									return;
 								}
 							}
@@ -526,13 +508,19 @@ public class ConstraintSolver {
 					final Stmt allocSite = wrappedAllocSite.stmt().getUnit().get();
 					
 					if (wrappedCallSite.getVarName().equals(varName)) {
+						// Obtain statements along data flow path ("relevant statements")
+						// TODO: Which of the additionalBoomerangQueries do we need? The first? All of them? What if there are multiple alloc sites?
+						ExtractParameterAnalysis.AdditionalBoomerangQuery boomerangQuery = boomerangQueries.stream().findFirst().get();
+						PathConditionsQuery query = new PathConditionsQuery(boomerangQuery.var().value(), callSite, boomerangQuery.stmt().getMethod(), site -> true);
+						ArrayList<Statement> dataFlowStatements = RelevantStatementsExtractorKt.extractRelevantStatements(boomerangQuery.getResult(), query);
+
 						if (callSite.equals(allocSite)) {
 							varVal.add(retrieveConstantFromValue(callSite.getInvokeExpr().getArg(wrappedCallSite.getIndex())));
-							witness = new CallSiteWithExtractedValue(wrappedCallSite, wrappedAllocSite);
+							witness = new CallSiteWithExtractedValue(wrappedCallSite, wrappedAllocSite, dataFlowStatements);
 						} else if (allocSite instanceof AssignStmt) {
 							if (wrappedAllocSite.getValue() instanceof Constant) {
 								varVal.add(retrieveConstantFromValue(wrappedAllocSite.getValue()));
-								witness = new CallSiteWithExtractedValue(wrappedCallSite, wrappedAllocSite);
+								witness = new CallSiteWithExtractedValue(wrappedCallSite, wrappedAllocSite, dataFlowStatements);
 							}
 						}
 					}

@@ -1,15 +1,20 @@
 package crypto.extractparameter;
 
+import boomerang.jimple.Statement;
 import soot.Value;
 import soot.jimple.Constant;
 
-public class CallSiteWithExtractedValue {
-	private CallSiteWithParamIndex cs;
-	private ExtractedValue val;
+import java.util.List;
 
-	public CallSiteWithExtractedValue(CallSiteWithParamIndex cs, ExtractedValue val){
+public class CallSiteWithExtractedValue {
+	private final CallSiteWithParamIndex cs;
+	private final ExtractedValue val;
+	private final List<Statement> dataFlowStatements;
+
+	public CallSiteWithExtractedValue(CallSiteWithParamIndex cs, ExtractedValue val, List<Statement> dataFlowStatements){
 		this.cs = cs;
 		this.val = val;
+		this.dataFlowStatements = dataFlowStatements;
 	}
 
 	public CallSiteWithParamIndex getCallSite() {
@@ -19,7 +24,11 @@ public class CallSiteWithExtractedValue {
 	public ExtractedValue getVal() {
 		return val;
 	}
-	
+
+	public List<Statement> getDataFlowStatements() {
+		return dataFlowStatements;
+	}
+
 	@Override
 	public String toString() {
 		String res = "";

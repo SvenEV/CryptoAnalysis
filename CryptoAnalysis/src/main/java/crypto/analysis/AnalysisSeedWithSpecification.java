@@ -1,27 +1,12 @@
 package crypto.analysis;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-
-import com.google.common.collect.HashMultimap;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
-import com.google.common.collect.Sets;
-import com.google.common.collect.Table;
-import com.google.common.collect.Table.Cell;
-
 import boomerang.debugger.Debugger;
 import boomerang.jimple.AllocVal;
 import boomerang.jimple.Statement;
 import boomerang.jimple.Val;
 import boomerang.results.ForwardBoomerangResults;
+import com.google.common.collect.*;
+import com.google.common.collect.Table.Cell;
 import crypto.analysis.errors.IncompleteOperationError;
 import crypto.analysis.errors.TypestateError;
 import crypto.constraints.ConstraintSolver;
@@ -31,39 +16,19 @@ import crypto.extractparameter.ExtractParameterAnalysis;
 import crypto.extractparameter.ExtractedValue;
 import crypto.interfaces.ICryptSLPredicateParameter;
 import crypto.interfaces.ISLConstraint;
-import crypto.rules.CryptSLCondPredicate;
-import crypto.rules.CryptSLMethod;
-import crypto.rules.CryptSLObject;
-import crypto.rules.CryptSLPredicate;
-import crypto.rules.StateNode;
-import crypto.rules.TransitionEdge;
-import crypto.typestate.CryptSLMethodToSootMethod;
-import crypto.typestate.ErrorStateNode;
-import crypto.typestate.ExtendedIDEALAnaylsis;
-import crypto.typestate.ReportingErrorStateNode;
-import crypto.typestate.SootBasedStateMachineGraph;
-import crypto.typestate.WrappedState;
+import crypto.rules.*;
+import crypto.typestate.*;
 import ideal.IDEALSeedSolver;
-import soot.IntType;
-import soot.Local;
-import soot.RefType;
-import soot.SootMethod;
-import soot.Type;
-import soot.Unit;
-import soot.Value;
-import soot.ValueBox;
-import soot.jimple.AssignStmt;
-import soot.jimple.Constant;
-import soot.jimple.IntConstant;
-import soot.jimple.InvokeExpr;
-import soot.jimple.Stmt;
-import soot.jimple.StringConstant;
-import soot.jimple.ThrowStmt;
+import soot.*;
+import soot.jimple.*;
 import soot.jimple.toolkits.ide.icfg.BiDiInterproceduralCFG;
 import sync.pds.solver.nodes.Node;
 import typestate.TransitionFunction;
 import typestate.finiteautomata.ITransition;
 import typestate.finiteautomata.State;
+
+import java.util.*;
+import java.util.Map.Entry;
 
 public class AnalysisSeedWithSpecification extends IAnalysisSeed {
 
@@ -121,8 +86,8 @@ public class AnalysisSeedWithSpecification extends IAnalysisSeed {
 			//Timeout occured.
 			return;
 		allCallsOnObject = results.getInvokedMethodOnInstance();
-		runExtractParameterAnalysis();
-		checkInternalConstraints();
+		Set<ExtractParameterAnalysis.AdditionalBoomerangQuery> boomerangQueries = runExtractParameterAnalysis();
+		checkInternalConstraints(boomerangQueries);
 
 		Multimap<Statement, State> unitToStates = HashMultimap.create();
 		for (Cell<Statement, Val, TransitionFunction> c : results.asStatementValWeightTable().cellSet()) {
@@ -142,9 +107,9 @@ public class AnalysisSeedWithSpecification extends IAnalysisSeed {
 	}
 
 
-	private void checkInternalConstraints() {
+	private void checkInternalConstraints(Set<ExtractParameterAnalysis.AdditionalBoomerangQuery> boomerangQueries) {
 		cryptoScanner.getAnalysisListener().beforeConstraintCheck(this);
-		constraintSolver = new ConstraintSolver(this, allCallsOnObject.keySet(), cryptoScanner.getAnalysisListener());
+		constraintSolver = new ConstraintSolver(this, allCallsOnObject.keySet(), boomerangQueries, cryptoScanner.getAnalysisListener());
 		cryptoScanner.getAnalysisListener().checkedConstraints(this, constraintSolver.getRelConstraints());
 		internalConstraintSatisfied = (0 == constraintSolver.evaluateRelConstraints());
 		cryptoScanner.getAnalysisListener().afterConstraintCheck(this);
@@ -169,9 +134,9 @@ public class AnalysisSeedWithSpecification extends IAnalysisSeed {
 		}
 	}
 	
-	private void runExtractParameterAnalysis() {
+	private Set<ExtractParameterAnalysis.AdditionalBoomerangQuery> runExtractParameterAnalysis() {
 		this.parameterAnalysis = new ExtractParameterAnalysis(this.cryptoScanner, allCallsOnObject, spec.getFSM());
-		this.parameterAnalysis.run();
+		return this.parameterAnalysis.run();
 	}
 	
 	private void computeTypestateErrorUnits() {
@@ -550,6 +515,10 @@ public class AnalysisSeedWithSpecification extends IAnalysisSeed {
 
 	public Set<RequiredCryptSLPredicate> getMissingPredicates() {
 		return missingPredicates;
+	}
+
+	public Map<Statement, SootMethod> getAllCallsOnObject() {
+		return allCallsOnObject;
 	}
 
 	public ExtractParameterAnalysis getParameterAnalysis() {
