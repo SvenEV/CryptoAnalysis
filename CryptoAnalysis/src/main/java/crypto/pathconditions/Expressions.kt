@@ -62,17 +62,11 @@ enum class WithContextFormat {
     ContextFree // 'x'
 }
 
-
 private fun validateBool(t: Type) {
     if (t != BooleanType.v())
         throw IllegalArgumentException("Expected boolean expression but got expression of type '${t.prettyPrint()}'")
 }
 
-// TODO: Extend this model to non-bool expressions so we can inline in cases like this:
-//       val foo = 17
-//       val bar = foo + 1
-//       if (bar == 18) { ... }
-//       ==> if (17 + 1 == 18) ==Z3==> true
 sealed class JExpression(val type: Type) {
     override fun toString() = toString(WithContextFormat.Default)
     abstract fun toString(format: WithContextFormat): String
