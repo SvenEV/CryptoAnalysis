@@ -275,6 +275,11 @@
             <version>${kotlin.version}</version>
             <scope>test</scope>
         </dependency>
+		<dependency>
+			<groupId>z3Prover</groupId>
+			<artifactId>z3</artifactId>
+			<version>4.8.4</version>
+		</dependency>
 
     </dependencies>
 
@@ -300,6 +305,13 @@
 			<releases>
 				<enabled>false</enabled>
 			</releases>
+		</repository>
+		<repository>
+			<id>localLibs</id>
+			<name>localLibs</name>
+			<!--<url>file://${basedir}/repository</url>-->
+			<url>file://E:/Projects/Masterarbeit/repository</url>
+			<!-- https://stackoverflow.com/questions/2229757/maven-add-a-dependency-to-a-jar-by-relative-path -->
 		</repository>
 	</repositories>
 
