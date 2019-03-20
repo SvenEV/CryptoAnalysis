@@ -3,13 +3,17 @@ package crypto.extractparameter;
 import boomerang.jimple.Statement;
 import soot.Value;
 
-public class ExtractedValue {
-	private Statement stmt;
-	private Value val;
+import java.util.List;
 
-	public ExtractedValue(Statement stmt, Value val) {
+public class ExtractedValue {
+	private final Statement stmt;
+	private final Value val;
+	private final List<Statement> dataFlowStatements;
+
+	public ExtractedValue(Statement stmt, Value val, List<Statement> dataFlowStatements) {
 		this.stmt = stmt;
 		this.val = val;
+		this.dataFlowStatements = dataFlowStatements;
 	}
 
 	public Statement stmt() {
@@ -19,7 +23,11 @@ public class ExtractedValue {
 	public Value getValue() {
 		return val;
 	}
-	
+
+	public List<Statement> getDataFlowStatements() {
+		return dataFlowStatements;
+	}
+
 	@Override
 	public String toString() {
 		return "Extracted Value: " + val + " at " +stmt;

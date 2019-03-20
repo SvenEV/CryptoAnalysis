@@ -1,12 +1,15 @@
 package crypto.analysis.errors;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.google.common.base.CharMatcher;
 
 import crypto.analysis.IAnalysisSeed;
 import crypto.extractparameter.CallSiteWithExtractedValue;
 import crypto.interfaces.ISLConstraint;
+import crypto.pathconditions.expressions.WithContextFormat;
+import crypto.pathconditions.PathConditionResult;
 import crypto.rules.CryptSLArithmeticConstraint;
 import crypto.rules.CryptSLComparisonConstraint;
 import crypto.rules.CryptSLComparisonConstraint.CompOp;
@@ -20,6 +23,8 @@ import soot.jimple.AssignStmt;
 import soot.jimple.Constant;
 import soot.jimple.Stmt;
 import soot.jimple.internal.AbstractInvokeExpr;
+
+import static crypto.pathconditions.AnalysisEntryPointKt.computeRefinedSimplifiedPathConditions;
 
 public class ConstraintError extends ErrorWithObjectAllocation{
 
@@ -47,7 +52,13 @@ public class ConstraintError extends ErrorWithObjectAllocation{
 
 	@Override
 	public String toErrorMarkerString() {
-		return callSiteWithParamIndex.toString() + evaluateBrokenConstraint(brokenConstraint);
+
+		List<PathConditionResult> conditions = computeRefinedSimplifiedPathConditions(callSiteWithParamIndex.getVal().getDataFlowStatements());
+		String conditionsString = conditions.stream()
+				.map(c -> "    * " + c.getCondition().prettyPrint(WithContextFormat.ContextFree))
+				.collect(Collectors.joining(System.lineSeparator()));
+
+		return callSiteWithParamIndex.toString() + evaluateBrokenConstraint(brokenConstraint) + System.lineSeparator() + conditionsString;
 	}
 	
 	

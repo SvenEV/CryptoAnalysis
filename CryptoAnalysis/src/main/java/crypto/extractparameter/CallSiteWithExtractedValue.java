@@ -9,12 +9,10 @@ import java.util.List;
 public class CallSiteWithExtractedValue {
 	private final CallSiteWithParamIndex cs;
 	private final ExtractedValue val;
-	private final List<Statement> dataFlowStatements;
 
-	public CallSiteWithExtractedValue(CallSiteWithParamIndex cs, ExtractedValue val, List<Statement> dataFlowStatements){
+	public CallSiteWithExtractedValue(CallSiteWithParamIndex cs, ExtractedValue val){
 		this.cs = cs;
 		this.val = val;
-		this.dataFlowStatements = dataFlowStatements;
 	}
 
 	public CallSiteWithParamIndex getCallSite() {
@@ -23,10 +21,6 @@ public class CallSiteWithExtractedValue {
 
 	public ExtractedValue getVal() {
 		return val;
-	}
-
-	public List<Statement> getDataFlowStatements() {
-		return dataFlowStatements;
 	}
 
 	@Override

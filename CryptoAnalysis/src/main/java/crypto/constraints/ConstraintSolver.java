@@ -258,14 +258,7 @@ public class ConstraintSolver {
 							for (Type t : vals) {
 								if (t.toQuotedString().equals(parameters.get(1).getName())) {
 									//TODO: Fix NeverTypeOfErrors also report a ConstraintError
-
-									// Obtain statements along data flow path ("relevant statements")
-									// TODO: Which of the additionalBoomerangQueries do we need? The first? All of them? What if there are multiple alloc sites?
-									ExtractParameterAnalysis.AdditionalBoomerangQuery boomerangQuery = boomerangQueries.stream().findFirst().get();
-									PathConditionsQuery query = new PathConditionsQuery(boomerangQuery.var().value(), cs.stmt().getUnit().get(), boomerangQuery.stmt().getMethod(), site -> true);
-									ArrayList<Statement> dataFlowStatements = RelevantStatementsExtractorKt.extractRelevantStatements(boomerangQuery.getResult(), query);
-
-									errors.add(new NeverTypeOfError(new CallSiteWithExtractedValue(cs, null, dataFlowStatements), classSpec.getRule(), object, pred));
+									errors.add(new NeverTypeOfError(new CallSiteWithExtractedValue(cs, null), classSpec.getRule(), object, pred));
 									return;
 								}
 							}
@@ -514,19 +507,13 @@ public class ConstraintSolver {
 					final Stmt allocSite = wrappedAllocSite.stmt().getUnit().get();
 					
 					if (wrappedCallSite.getVarName().equals(varName)) {
-						// Obtain statements along data flow path ("relevant statements")
-						// TODO: Which of the additionalBoomerangQueries do we need? The first? All of them? What if there are multiple alloc sites?
-						ExtractParameterAnalysis.AdditionalBoomerangQuery boomerangQuery = boomerangQueries.stream().findFirst().get();
-						PathConditionsQuery query = new PathConditionsQuery(boomerangQuery.var().value(), callSite, boomerangQuery.stmt().getMethod(), site -> true);
-						ArrayList<Statement> dataFlowStatements = RelevantStatementsExtractorKt.extractRelevantStatements(boomerangQuery.getResult(), query);
-
 						if (callSite.equals(allocSite)) {
 							varVal.add(retrieveConstantFromValue(callSite.getInvokeExpr().getArg(wrappedCallSite.getIndex())));
-							witness = new CallSiteWithExtractedValue(wrappedCallSite, wrappedAllocSite, dataFlowStatements);
+							witness = new CallSiteWithExtractedValue(wrappedCallSite, wrappedAllocSite);
 						} else if (allocSite instanceof AssignStmt) {
 							if (wrappedAllocSite.getValue() instanceof Constant) {
 								varVal.add(retrieveConstantFromValue(wrappedAllocSite.getValue()));
-								witness = new CallSiteWithExtractedValue(wrappedCallSite, wrappedAllocSite, dataFlowStatements);
+								witness = new CallSiteWithExtractedValue(wrappedCallSite, wrappedAllocSite);
 							}
 						}
 					}

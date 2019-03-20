@@ -206,8 +206,7 @@ public class PredicateHandler {
 				if (!rule.getPredicates().contains(pred.getPred())){
 					for(CallSiteWithParamIndex v : seed.getParameterAnalysis().getAllQuerySites()){
 						if(pred.getPred().getInvolvedVarNames().contains(v.getVarName()) && v.stmt().equals(pred.getLocation())){
-							List<Statement> dataFlowStatements = null; // TODO: Determine relevant statements
-							cryptoScanner.getAnalysisListener().reportError(seed, new RequiredPredicateError(pred.getPred(), pred.getLocation(), seed.getSpec().getRule(), new CallSiteWithExtractedValue(v, null, dataFlowStatements)));
+							cryptoScanner.getAnalysisListener().reportError(seed, new RequiredPredicateError(pred.getPred(), pred.getLocation(), seed.getSpec().getRule(), new CallSiteWithExtractedValue(v, null)));
 						}
 					}
 				}

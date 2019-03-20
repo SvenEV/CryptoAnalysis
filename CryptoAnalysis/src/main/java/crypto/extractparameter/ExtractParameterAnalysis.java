@@ -13,6 +13,8 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import crypto.analysis.CryptoScanner;
 import crypto.boomerang.CogniCryptIntAndStringBoomerangOptions;
+import crypto.pathconditions.PathConditionsQuery;
+import crypto.pathconditions.boomerang.RelevantStatementsExtractorKt;
 import crypto.rules.CryptSLMethod;
 import crypto.typestate.CryptSLMethodToSootMethod;
 import crypto.typestate.LabeledMatcherTransition;
@@ -24,15 +26,12 @@ import soot.jimple.toolkits.ide.icfg.BiDiInterproceduralCFG;
 import typestate.finiteautomata.MatcherTransition;
 import wpds.impl.Weight.NoWeight;
 
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.Map.Entry;
-import java.util.Set;
 
 public class ExtractParameterAnalysis {
 
-	private Map<Statement,SootMethod> allCallsOnObject;
+	private Map<Statement, SootMethod> allCallsOnObject;
 	private Collection<LabeledMatcherTransition> events = Sets.newHashSet();
 	private CryptoScanner cryptoScanner;
 	private Multimap<CallSiteWithParamIndex, ExtractedValue> collectedValues = HashMultimap.create();
@@ -48,21 +47,21 @@ public class ExtractParameterAnalysis {
 	public ExtractParameterAnalysis(CryptoScanner cryptoScanner, Map<Statement, SootMethod> allCallsOnObject, SootBasedStateMachineGraph fsm) {
 		this.cryptoScanner = cryptoScanner;
 		this.allCallsOnObject = allCallsOnObject;
-		for(MatcherTransition m : fsm.getAllTransitions()) {
-			if(m instanceof LabeledMatcherTransition) {
-				this.events.add((LabeledMatcherTransition) m );
+		for (MatcherTransition m : fsm.getAllTransitions()) {
+			if (m instanceof LabeledMatcherTransition) {
+				this.events.add((LabeledMatcherTransition) m);
 			}
 		}
 	}
 
 	public Set<AdditionalBoomerangQuery> run() {
-		for(Entry<Statement, SootMethod> callSiteWithCallee : allCallsOnObject.entrySet()) {
+		for (Entry<Statement, SootMethod> callSiteWithCallee : allCallsOnObject.entrySet()) {
 			Statement callSite = callSiteWithCallee.getKey();
 			SootMethod declaredCallee = callSiteWithCallee.getValue();
-			if(callSite.isCallsite()){
-				for(LabeledMatcherTransition e : events) {
-					if(e.matches(declaredCallee)) {
-						injectQueryAtCallSite(e.label(),callSite);
+			if (callSite.isCallsite()) {
+				for (LabeledMatcherTransition e : events) {
+					if (e.matches(declaredCallee)) {
+						injectQueryAtCallSite(e.label(), callSite);
 					}
 				}
 			}
@@ -79,6 +78,7 @@ public class ExtractParameterAnalysis {
 
 		return additionalBoomerangQuery.keySet();
 	}
+
 	public Multimap<CallSiteWithParamIndex, ExtractedValue> getCollectedValues() {
 		return collectedValues;
 	}
@@ -86,25 +86,25 @@ public class ExtractParameterAnalysis {
 	public Multimap<CallSiteWithParamIndex, Type> getPropagatedTypes() {
 		return propagatedTypes;
 	}
-	
+
 	public Collection<CallSiteWithParamIndex> getAllQuerySites() {
 		return querySites;
 	}
 
 	private void injectQueryAtCallSite(List<CryptSLMethod> list, Statement callSite) {
-		if(!callSite.isCallsite())
+		if (!callSite.isCallsite())
 			return;
-		for(CryptSLMethod matchingDescriptor : list){
-			for(SootMethod m : CryptSLMethodToSootMethod.v().convert(matchingDescriptor)){
+		for (CryptSLMethod matchingDescriptor : list) {
+			for (SootMethod m : CryptSLMethodToSootMethod.v().convert(matchingDescriptor)) {
 				SootMethod method = callSite.getUnit().get().getInvokeExpr().getMethod();
 				if (!m.equals(method))
 					continue;
 				{
 					int index = 0;
-					for(Entry<String, String> param : matchingDescriptor.getParameters()){
-						if(!param.getKey().equals("_")){
+					for (Entry<String, String> param : matchingDescriptor.getParameters()) {
+						if (!param.getKey().equals("_")) {
 							soot.Type parameterType = method.getParameterType(index);
-							if(parameterType.toString().equals(param.getValue())){
+							if (parameterType.toString().equals(param.getValue())) {
 								addQueryAtCallsite(param.getKey(), callSite, index);
 							}
 						}
@@ -116,38 +116,40 @@ public class ExtractParameterAnalysis {
 	}
 
 	public void addQueryAtCallsite(final String varNameInSpecification, final Statement stmt, final int index) {
-		if(!stmt.isCallsite())
+		if (!stmt.isCallsite())
 			return;
 		Value parameter = stmt.getUnit().get().getInvokeExpr().getArg(index);
 		if (!(parameter instanceof Local)) {
 			CallSiteWithParamIndex cs = new CallSiteWithParamIndex(stmt, new Val(parameter, stmt.getMethod()), index, varNameInSpecification);
-			collectedValues.put(cs
-					, new ExtractedValue(stmt,parameter));
+			List<Statement> dataFlowStatements = Collections.emptyList(); // TODO: What should dataFlowStatements be in this context?
+			collectedValues.put(cs, new ExtractedValue(stmt, parameter, dataFlowStatements));
 			querySites.add(cs);
 			return;
 		}
 		Val queryVal = new Val((Local) parameter, stmt.getMethod());
-		
-		for(Unit pred : cryptoScanner.icfg().getPredsOf(stmt.getUnit().get())) {
+
+		for (Unit pred : cryptoScanner.icfg().getPredsOf(stmt.getUnit().get())) {
 			AdditionalBoomerangQuery query = additionalBoomerangQuery
-					.getOrCreate(new AdditionalBoomerangQuery(new Statement((Stmt)pred, stmt.getMethod()), queryVal));
+					.getOrCreate(new AdditionalBoomerangQuery(new Statement((Stmt) pred, stmt.getMethod()), queryVal));
 			CallSiteWithParamIndex callSiteWithParamIndex = new CallSiteWithParamIndex(stmt, queryVal, index, varNameInSpecification);
 			querySites.add(callSiteWithParamIndex);
-			query.addListener(new QueryListener() {
-				@Override
-				public void solved(AdditionalBoomerangQuery q, BackwardBoomerangResults<NoWeight> res) {
-					propagatedTypes.putAll(callSiteWithParamIndex, res.getPropagationType());
-					for (ForwardQuery v : res.getAllocationSites().keySet()) {
-						ExtractedValue extractedValue = null;
-						if(v.var() instanceof AllocVal) {
-							AllocVal allocVal = (AllocVal) v.var();
-							extractedValue = new ExtractedValue(allocVal.allocationStatement(),allocVal.allocationValue());
-						} else {
-							extractedValue = new ExtractedValue(v.stmt(),v.var().value());
-						}
-						collectedValues.put(callSiteWithParamIndex,
-								extractedValue);
+			query.addListener((q, result) -> {
+				propagatedTypes.putAll(callSiteWithParamIndex, result.getPropagationType());
+				for (ForwardQuery v : result.getAllocationSites().keySet()) {
+					// Obtain statements along data flow path ("relevant statements")
+					// TODO: Is there any difference between q.var() and v.var() or q.stmt() and v.stmt()?
+					// TODO: Do we really get different data flow statements for different forward queries
+					PathConditionsQuery pcQuery = new PathConditionsQuery(v.var().value(), v.stmt().getUnit().get(), v.stmt().getMethod(), site -> true);
+					ArrayList<Statement> dataFlowStatements = RelevantStatementsExtractorKt.extractRelevantStatements(result, pcQuery);
+
+					ExtractedValue extractedValue;
+					if (v.var() instanceof AllocVal) {
+						AllocVal allocVal = (AllocVal) v.var();
+						extractedValue = new ExtractedValue(allocVal.allocationStatement(), allocVal.allocationValue(), dataFlowStatements);
+					} else {
+						extractedValue = new ExtractedValue(v.stmt(), v.var().value(), dataFlowStatements);
 					}
+					collectedValues.put(callSiteWithParamIndex, extractedValue);
 				}
 			});
 		}
@@ -200,8 +202,6 @@ public class ExtractParameterAnalysis {
 	private static interface QueryListener {
 		public void solved(AdditionalBoomerangQuery q, BackwardBoomerangResults<NoWeight> res);
 	}
-	
-	
 
 
 }
