@@ -2,8 +2,7 @@ package crypto.pathconditions.refinement
 
 import crypto.pathconditions.expressions.*
 import crypto.pathconditions.ofType
-import soot.Local
-import soot.SootMethod
+import soot.*
 import soot.Unit
 import soot.jimple.*
 
@@ -19,22 +18,36 @@ import soot.jimple.*
 //
 
 /**
- * Tries to discover the code pattern that Jimple produces for statements like 'boolean x = (i == 15)', that is:
+ * Gets a sequence of all units from a unit's direct predecessor up to the first unit.
+ * Note: Removing the return type annotation results in an internal Kotlin compiler error
+ */
+private fun <E : Unit> PatchingChain<E>.getPredsOf(item: E): Sequence<E> = sequence {
+    val pred = getPredOf(item)
+    if (pred != null) {
+        yield(pred)
+        yieldAll(getPredsOf(pred))
+    }
+}
+
+/**
+ * Tries to discover the code pattern that Jimple produces for statements like 'String x = (i == 15) ? a : b'
+ * where a and b are of type Boolean. This also covers simpler conditional assignments like 'boolean x = (i == 15)'.
+ * The code pattern looks like this:
  *   if (i != 15) goto label1
- *   $v = 1
+ *   $v = a
  *   goto label2
  * label1:
- *   $v = 0
+ *   $v = b
  * label2:
  *   x = $v
  */
-private fun tryFindBoolPattern(
+private fun tryFindConditionalAssignmentPattern(
     local: WithContext<Local>,
     trueAssignment: AssignStmt,
     falseAssignment: AssignStmt
 ): JExpression? {
     val units = local.method?.activeBody?.units
-    val ifStmt = units?.getPredOf(trueAssignment) as? IfStmt
+    val ifStmt = units?.getPredsOf(trueAssignment)?.ofType<IfStmt>()?.firstOrNull()
     val trueAssignmentSucc = units?.getSuccOf(trueAssignment) as? GotoStmt
     val falseAssignmentPred = units?.getPredOf(falseAssignment) as? GotoStmt
     val usage = units?.getSuccOf(falseAssignment)
@@ -43,7 +56,13 @@ private fun tryFindBoolPattern(
         trueAssignmentSucc == falseAssignmentPred &&
         usage != null && usage.useBoxes.any { it.value == local.value }
     ) {
-        return not(parseJimpleExpression(ValueWithContext(ifStmt.condition, local.unit, local.method), ForceBool))
+        val condition = parseJimpleExpression(ValueWithContext(ifStmt.condition, local.unit, local.method), ForceBool)
+        val typeHint = if (local.value.type == BooleanType.v()) ForceBool else NoTypeHint
+        val trueExpr = parseJimpleExpression(ValueWithContext(trueAssignment.rightOp, local.unit, local.method), typeHint)
+        val falseExpr = parseJimpleExpression(ValueWithContext(falseAssignment.rightOp, local.unit, local.method), typeHint)
+
+        // Note: 'condition' is always inverted ("if (condition) goto else branch")
+        return JConditional(not(condition), trueExpr, falseExpr)
     }
 
     return null
@@ -72,62 +91,64 @@ fun tryFindDefinition(local: WithContext<Local>): JExpression? {
 
         when (assignments.size) {
             1 -> parseJimpleExpression(ValueWithContext(assignments[0].rightOp, assignments[0], local.method), NoTypeHint)
-            2 -> tryFindBoolPattern(local, assignments[0], assignments[1])
+            2 -> tryFindConditionalAssignmentPattern(local, assignments[0], assignments[1])
             else -> null
         }
     }
 }
 
-fun refine(expr: JExpression): JExpression = when (expr) {
-    is JNot -> not(refine(expr.op))
-    is JAnd -> and(refine(expr.left), refine(expr.right))
-    is JOr -> or(refine(expr.left), refine(expr.right))
-    is JCast -> JCast(refine(expr.expr), expr.castType)
-    is JInstanceOf -> JInstanceOf(refine(expr.expr), expr.checkType)
-    is JAdd -> JAdd(refine(expr.left), refine(expr.right))
-    is JSubtract -> JSubtract(refine(expr.left), refine(expr.right))
-    is JMultiply -> JMultiply(refine(expr.left), refine(expr.right))
-    is JDivide -> JDivide(refine(expr.left), refine(expr.right))
-    is JRemainder -> JRemainder(refine(expr.left), refine(expr.right))
-    is JCondition -> {
-        var refined = JCondition(refine(expr.left), refine(expr.right), expr.symbol)
-        when {
-            refined.symbol is JEquals && refined.right is JTrue -> refined.left
-            refined.symbol is JEquals && refined.left is JTrue -> refined.right
-            refined.symbol is JEquals && refined.right is JFalse -> JNot(refined.left)
-            refined.symbol is JEquals && refined.left is JFalse -> JNot(refined.right)
-            refined.symbol is JNotEquals && refined.right is JTrue -> JNot(refined.left)
-            refined.symbol is JNotEquals && refined.left is JTrue -> JNot(refined.right)
-            refined.symbol is JNotEquals && refined.right is JFalse -> refined.left
-            refined.symbol is JNotEquals && refined.left is JFalse -> refined.right
+fun refine(expr: JExpression): JExpression =
+    try {
+        when (expr) {
+            is JNot -> not(refine(expr.op))
+            is JAnd -> and(refine(expr.left), refine(expr.right))
+            is JOr -> or(refine(expr.left), refine(expr.right))
+            is JCast -> JCast(refine(expr.expr), expr.castType)
+            is JInstanceOf -> JInstanceOf(refine(expr.expr), expr.checkType)
+            is JConditional -> JConditional(refine(expr.condition), refine(expr.trueExpr), refine(expr.falseExpr))
+            is JAdd -> JAdd(refine(expr.left), refine(expr.right))
+            is JSubtract -> JSubtract(refine(expr.left), refine(expr.right))
+            is JMultiply -> JMultiply(refine(expr.left), refine(expr.right))
+            is JDivide -> JDivide(refine(expr.left), refine(expr.right))
+            is JRemainder -> JRemainder(refine(expr.left), refine(expr.right))
+            is JCondition -> {
+                var refined = JCondition(refine(expr.left), refine(expr.right), expr.symbol)
+                when {
+                    refined.symbol is JEquals && refined.right is JTrue -> refined.left
+                    refined.symbol is JEquals && refined.left is JTrue -> refined.right
+                    refined.symbol is JEquals && refined.right is JFalse -> JNot(refined.left)
+                    refined.symbol is JEquals && refined.left is JFalse -> JNot(refined.right)
+                    refined.symbol is JNotEquals && refined.right is JTrue -> JNot(refined.left)
+                    refined.symbol is JNotEquals && refined.left is JTrue -> JNot(refined.right)
+                    refined.symbol is JNotEquals && refined.right is JFalse -> refined.left
+                    refined.symbol is JNotEquals && refined.left is JFalse -> refined.right
 
-            refined.symbol is JLessOrEqual && refined.left is JCompareGreater && ((refined.right as? JConstant)?.v?.value as? IntConstant)?.value == 0 -> {
-                val cmpg = refined.left as JCompareGreater
-                // (wanna turn '(x cmpg y) <= 0' into 'x <= y', but I initially forgot to refine x and y.
-                // Turns out this is not an easy fix)
-                // TODO: Continue here! The following line throws:
-                // JCondition(refine(cmpg.left), refine(cmpg.right), JLessOrEqual)
-                JCondition(cmpg.left, cmpg.right, JLessOrEqual)
+                    refined.left is JCompareGreater && ((refined.right as? JConstant)?.v?.value as? IntConstant)?.value == 0 -> {
+                        // Turn '(x cmpg y) <= 0' into 'x <= y'
+                        val cmpg = refined.left as JCompareGreater
+                        JCondition(refine(cmpg.left), refine(cmpg.right), refined.symbol)
+                    }
+                    else -> refined
+                }
             }
-
-            else -> refined
+            is JLocal -> {
+                val uniqueDefinition = tryFindDefinition(expr.v)
+                if (uniqueDefinition != null)
+                    refine(uniqueDefinition)
+                else
+                    expr
+            }
+            is JVirtualInvoke -> JVirtualInvoke(refine(expr.base), expr.method, expr.args.map(::refine))
+            is JSpecialInvoke -> JSpecialInvoke(refine(expr.base), expr.method, expr.args.map(::refine))
+            is JInterfaceInvoke -> JInterfaceInvoke(refine(expr.base), expr.method, expr.args.map(::refine))
+            is JStaticInvoke -> JStaticInvoke(expr.method, expr.args.map(::refine))
+            is JDynamicInvoke -> JDynamicInvoke(expr.method, expr.args.map(::refine))
+            is JInstanceFieldRef -> JInstanceFieldRef(refine(expr.base), expr.field)
+            else -> expr // can't refine
         }
+    } catch (e: Exception) {
+        throw Exception("Failed to refine '$expr'", e)
     }
-    is JLocal -> {
-        val uniqueDefinition = tryFindDefinition(expr.v)
-        if (uniqueDefinition != null)
-            refine(uniqueDefinition)
-        else
-            expr
-    }
-    is JVirtualInvoke -> JVirtualInvoke(refine(expr.base), expr.method, expr.args.map(::refine))
-    is JSpecialInvoke -> JSpecialInvoke(refine(expr.base), expr.method, expr.args.map(::refine))
-    is JInterfaceInvoke -> JInterfaceInvoke(refine(expr.base), expr.method, expr.args.map(::refine))
-    is JStaticInvoke -> JStaticInvoke(expr.method, expr.args.map(::refine))
-    is JDynamicInvoke -> JDynamicInvoke(expr.method, expr.args.map(::refine))
-    is JInstanceFieldRef -> JInstanceFieldRef(refine(expr.base), expr.field)
-    else -> expr // can't refine
-}
 
 fun refineUnitToString(stmt: Unit, method: SootMethod) = when (stmt) {
     is AssignStmt -> "${stmt.leftOp} = ${refine(parseJimpleExpression(ValueWithContext(stmt.rightOp, stmt, method), NoTypeHint))}"
