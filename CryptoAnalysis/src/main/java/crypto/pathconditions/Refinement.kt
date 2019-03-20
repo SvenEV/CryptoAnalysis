@@ -1,5 +1,6 @@
 package crypto.pathconditions.refinement
 
+import crypto.pathconditions.debug.prettyPrint
 import crypto.pathconditions.expressions.*
 import crypto.pathconditions.ofType
 import soot.*
@@ -56,13 +57,17 @@ private fun tryFindConditionalAssignmentPattern(
         trueAssignmentSucc == falseAssignmentPred &&
         usage != null && usage.useBoxes.any { it.value == local.value }
     ) {
-        val condition = parseJimpleExpression(ValueWithContext(ifStmt.condition, local.unit, local.method), ForceBool)
-        val typeHint = if (local.value.type == BooleanType.v()) ForceBool else NoTypeHint
-        val trueExpr = parseJimpleExpression(ValueWithContext(trueAssignment.rightOp, local.unit, local.method), typeHint)
-        val falseExpr = parseJimpleExpression(ValueWithContext(falseAssignment.rightOp, local.unit, local.method), typeHint)
+        try {
+            val condition = parseJimpleExpression(ValueWithContext(ifStmt.condition, local.unit, local.method), ForceBool)
+            val typeHint = if (local.value.type == BooleanType.v()) ForceBool else NoTypeHint
+            val trueExpr = parseJimpleExpression(ValueWithContext(trueAssignment.rightOp, local.unit, local.method), typeHint)
+            val falseExpr = parseJimpleExpression(ValueWithContext(falseAssignment.rightOp, local.unit, local.method), typeHint)
 
-        // Note: 'condition' is always inverted ("if (condition) goto else branch")
-        return JConditional(not(condition), trueExpr, falseExpr)
+            // Note: 'condition' is always inverted ("if (condition) goto else branch")
+            return conditional(not(condition), trueExpr, falseExpr)
+        } catch (e: Exception) {
+            throw Exception("Failed to reconstruct conditional assignment '${ifStmt.condition.prettyPrint()} ? ${trueAssignment.rightOp.prettyPrint()} : ${falseAssignment.rightOp.prettyPrint()}'", e)
+        }
     }
 
     return null
@@ -105,7 +110,7 @@ fun refine(expr: JExpression): JExpression =
             is JOr -> or(refine(expr.left), refine(expr.right))
             is JCast -> JCast(refine(expr.expr), expr.castType)
             is JInstanceOf -> JInstanceOf(refine(expr.expr), expr.checkType)
-            is JConditional -> JConditional(refine(expr.condition), refine(expr.trueExpr), refine(expr.falseExpr))
+            is JConditional -> conditional(refine(expr.condition), refine(expr.trueExpr), refine(expr.falseExpr))
             is JAdd -> JAdd(refine(expr.left), refine(expr.right))
             is JSubtract -> JSubtract(refine(expr.left), refine(expr.right))
             is JMultiply -> JMultiply(refine(expr.left), refine(expr.right))

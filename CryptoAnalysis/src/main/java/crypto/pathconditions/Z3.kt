@@ -317,7 +317,7 @@ fun Z3Solver.decode(expr: Expr): JExpression =
                 val condition = decode(expr.args[0])
                 val trueExpr = decode(expr.args[1])
                 val falseExpr = decode(expr.args[2])
-                JConditional(condition, trueExpr, falseExpr)
+                conditional(condition, trueExpr, falseExpr)
             }
             else -> decodeValue(expr)
         }

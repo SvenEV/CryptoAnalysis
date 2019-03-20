@@ -72,6 +72,7 @@ sealed class JExpression {
 
     // For Java interop:
     fun prettyPrint(format: WithContextFormat) = toString(format)
+
     fun getType() = type
 }
 
@@ -107,7 +108,7 @@ data class JInstanceOf(val expr: JExpression, val checkType: Type) : JExpression
 data class JConditional(val condition: JExpression, val trueExpr: JExpression, val falseExpr: JExpression) : JExpression() {
     init {
         if (condition.type != BooleanType.v()) throw IllegalArgumentException("Condition must be of type Boolean")
-        if (trueExpr.type != falseExpr.type) throw IllegalArgumentException("True and false part of a conditional must have the same type")
+        if (trueExpr.type != falseExpr.type) throw IllegalArgumentException("True and false parts of a JConditional must have the same type (got '${trueExpr.type}' and '${falseExpr.type}')")
     }
 
     override fun toString() = super.toString()
@@ -217,8 +218,7 @@ data class JOr(val left: JExpression, val right: JExpression) : JExpression() {
 }
 
 /** Represents ==, !=, >, >=, < and <= expressions */
-data class JCondition(val left: JExpression, val right: JExpression, val symbol: LeafConditionSymbol) :
-    JExpression() {
+data class JCondition(val left: JExpression, val right: JExpression, val symbol: LeafConditionSymbol) : JExpression() {
     override fun toString() = super.toString()
 }
 
@@ -287,6 +287,22 @@ fun or(left: JExpression, right: JExpression): JExpression = when {
     }
 }
 
+/**
+ * Contains a targeted workaround for bool/int type incompatibility when constructing a [JConditional]:
+ * If one part is of type Boolean, treat the other as Boolean, too.
+ */
+fun conditional(condition: JExpression, trueExpr: JExpression, falseExpr: JExpression): JExpression {
+    val leftIsBool = trueExpr.type == BooleanType.v()
+    val rightIsBool = falseExpr.type == BooleanType.v()
+    val leftAsInt = (trueExpr as? JConstant)?.v?.value as? IntConstant
+    val rightAsInt = (falseExpr as? JConstant)?.v?.value as? IntConstant
+    return when {
+        leftIsBool && rightAsInt != null -> JConditional(condition, trueExpr, intToBool(rightAsInt.value))
+        rightIsBool && leftAsInt != null -> JConditional(condition, intToBool(leftAsInt.value), falseExpr)
+        else -> JConditional(condition, trueExpr, falseExpr)
+    }
+}
+
 fun not(cond: JExpression): JExpression = when (cond) {
     is JTrue -> JFalse
     is JFalse -> JTrue
@@ -301,106 +317,112 @@ sealed class TypeHint
 object NoTypeHint : TypeHint()
 object ForceBool : TypeHint()
 
+fun intToBool(i: Int) = when (i) {
+    0 -> JFalse
+    1 -> JTrue
+    else -> throw IllegalArgumentException("Cannot interpret '$i' as boolean")
+}
+
 /**
  * Turns a Jimple 'Value' into an instance of our custom expression tree model.
  */
 fun parseJimpleExpression(expr: ValueWithContext, typeHint: TypeHint): JExpression {
-    val v = expr.value
-    return when (v) {
-        is IntConstant -> when (typeHint) {
-            NoTypeHint -> JConstant(WithContext(v, expr.unit, expr.method))
-            ForceBool -> when (v.value) {
-                0 -> JFalse
-                1 -> JTrue
-                else -> throw IllegalArgumentException("Cannot interpret '${v.value}' as boolean")
+    try {
+        val v = expr.value
+        return when (v) {
+            is IntConstant -> when (typeHint) {
+                NoTypeHint -> JConstant(WithContext(v, expr.unit, expr.method))
+                ForceBool -> intToBool(v.value)
             }
-        }
 
-        is NullConstant -> JNull
+            is NullConstant -> JNull
 
-        is Constant -> JConstant(WithContext(v, expr.unit, expr.method))
+            is Constant -> JConstant(WithContext(v, expr.unit, expr.method))
 
-        is CastExpr -> JCast(parseJimpleExpression(expr.copy(value = v.op), NoTypeHint), v.castType)
-        is InstanceOfExpr -> JInstanceOf(parseJimpleExpression(expr.copy(value = v.op), NoTypeHint), v.checkType)
-        is Local -> JLocal(WithContext(v, expr.unit, expr.method), when (typeHint) {
-            is ForceBool -> BooleanType.v()
-            is NoTypeHint -> v.type
-        })
+            is CastExpr -> JCast(parseJimpleExpression(expr.copy(value = v.op), NoTypeHint), v.castType)
+            is InstanceOfExpr -> JInstanceOf(parseJimpleExpression(expr.copy(value = v.op), NoTypeHint), v.checkType)
+            is Local -> JLocal(WithContext(v, expr.unit, expr.method), when (typeHint) {
+                is ForceBool -> BooleanType.v()
+                is NoTypeHint -> v.type
+            })
 
-        is InstanceFieldRef -> JInstanceFieldRef(parseJimpleExpression(expr.copy(value = v.base), NoTypeHint), v.field)
-        is StaticFieldRef -> JStaticFieldRef(v.field)
+            is InstanceFieldRef -> JInstanceFieldRef(parseJimpleExpression(expr.copy(value = v.base), NoTypeHint), v.field)
+            is StaticFieldRef -> JStaticFieldRef(v.field)
 
-        is VirtualInvokeExpr -> JVirtualInvoke(
-            parseJimpleExpression(expr.copy(value = v.base), NoTypeHint),
-            v.method,
-            v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
+            is VirtualInvokeExpr -> JVirtualInvoke(
+                parseJimpleExpression(expr.copy(value = v.base), NoTypeHint),
+                v.method,
+                v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
 
-        is SpecialInvokeExpr -> JSpecialInvoke(
-            parseJimpleExpression(expr.copy(value = v.base), NoTypeHint),
-            v.method,
-            v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
+            is SpecialInvokeExpr -> JSpecialInvoke(
+                parseJimpleExpression(expr.copy(value = v.base), NoTypeHint),
+                v.method,
+                v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
 
-        is InterfaceInvokeExpr -> JInterfaceInvoke(
-            parseJimpleExpression(expr.copy(value = v.base), NoTypeHint),
-            v.method,
-            v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
+            is InterfaceInvokeExpr -> JInterfaceInvoke(
+                parseJimpleExpression(expr.copy(value = v.base), NoTypeHint),
+                v.method,
+                v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
 
-        is StaticInvokeExpr -> JStaticInvoke(
-            v.method,
-            v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
+            is StaticInvokeExpr -> JStaticInvoke(
+                v.method,
+                v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
 
-        is DynamicInvokeExpr -> JDynamicInvoke(
-            v.method,
-            v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
+            is DynamicInvokeExpr -> JDynamicInvoke(
+                v.method,
+                v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
 
-        is NewExpr -> {
-            // Find constructor call statement to get constructor arguments
-            val targetVariable = (expr.unit as AssignStmt).leftOp
-            val constructorCall = expr.method!!.activeBody.units
-                .ofType<InvokeStmt>()
-                .single { it.invokeExpr is SpecialInvokeExpr && it.invokeExpr.method.isConstructor && (it.invokeExpr as SpecialInvokeExpr).base == targetVariable }
-            JNew(
-                constructorCall.invokeExpr.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) },
-                v.baseType
-            )
-        }
-
-        is NegExpr -> JNot(parseJimpleExpression(expr.copy(value = v.op), ForceBool))
-
-        is BinopExpr -> {
-            val typeHint = if (v.op1.type == BooleanType.v() || v.op2.type == BooleanType.v()) ForceBool else NoTypeHint
-            val op1 = parseJimpleExpression(expr.copy(value = v.op1), typeHint)
-            val op2 = parseJimpleExpression(expr.copy(value = v.op2), typeHint)
-            when (v) {
-                is CmpgExpr -> JCompareGreater(op1, op2)
-                is CmplExpr -> JCompareLess(op1, op2)
-                is AddExpr -> JAdd(op1, op2)
-                is SubExpr -> JSubtract(op1, op2)
-                is MulExpr -> JMultiply(op1, op2)
-                is DivExpr -> JDivide(op1, op2)
-                is RemExpr -> JRemainder(op1, op2)
-                is ConditionExpr -> JCondition(op1, op2, when (v) {
-                    is EqExpr -> JEquals
-                    is NeExpr -> JNotEquals
-                    is GtExpr -> JGreaterThan
-                    is GeExpr -> JGreaterOrEqual
-                    is LtExpr -> JLessThan
-                    is LeExpr -> JLessOrEqual
-                    else -> TODO("Can't happen")
-                })
-                else -> TODO("Parsing of Jimple '${v.javaClass.name}' (example: '${v.prettyPrint()}')")
+            is NewExpr -> {
+                // Find constructor call statement to get constructor arguments
+                val targetVariable = (expr.unit as AssignStmt).leftOp
+                val constructorCall = expr.method!!.activeBody.units
+                    .ofType<InvokeStmt>()
+                    .single { it.invokeExpr is SpecialInvokeExpr && it.invokeExpr.method.isConstructor && (it.invokeExpr as SpecialInvokeExpr).base == targetVariable }
+                JNew(
+                    constructorCall.invokeExpr.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) },
+                    v.baseType
+                )
             }
+
+            is NegExpr -> JNot(parseJimpleExpression(expr.copy(value = v.op), ForceBool))
+
+            is BinopExpr -> {
+                val typeHint = if (v.op1.type == BooleanType.v() || v.op2.type == BooleanType.v()) ForceBool else NoTypeHint
+                val op1 = parseJimpleExpression(expr.copy(value = v.op1), typeHint)
+                val op2 = parseJimpleExpression(expr.copy(value = v.op2), typeHint)
+                when (v) {
+                    is CmpgExpr -> JCompareGreater(op1, op2)
+                    is CmplExpr -> JCompareLess(op1, op2)
+                    is AddExpr -> JAdd(op1, op2)
+                    is SubExpr -> JSubtract(op1, op2)
+                    is MulExpr -> JMultiply(op1, op2)
+                    is DivExpr -> JDivide(op1, op2)
+                    is RemExpr -> JRemainder(op1, op2)
+                    is ConditionExpr -> JCondition(op1, op2, when (v) {
+                        is EqExpr -> JEquals
+                        is NeExpr -> JNotEquals
+                        is GtExpr -> JGreaterThan
+                        is GeExpr -> JGreaterOrEqual
+                        is LtExpr -> JLessThan
+                        is LeExpr -> JLessOrEqual
+                        else -> TODO("Can't happen")
+                    })
+                    else -> TODO("Parsing of Jimple '${v.javaClass.name}' (example: '${v.prettyPrint()}')")
+                }
+            }
+
+            is JLengthExpr -> {
+                val op = parseJimpleExpression(expr.copy(value = v.op), NoTypeHint)
+                JInstanceFieldRef(op, SootField("length", IntType.v()))
+            }
+
+            is ThisRef -> JThisRef(v.type)
+            is ParameterRef -> JParameterRef(v.index, v.type)
+
+            else -> TODO("Parsing of Jimple '${v.javaClass.name}' (example: '${v.prettyPrint()}')")
         }
-
-        is JLengthExpr -> {
-            val op = parseJimpleExpression(expr.copy(value = v.op), NoTypeHint)
-            JInstanceFieldRef(op, SootField("length", IntType.v()))
-        }
-
-        is ThisRef -> JThisRef(v.type)
-        is ParameterRef -> JParameterRef(v.index, v.type)
-
-        else -> TODO("Parsing of Jimple '${v.javaClass.name}' (example: '${v.prettyPrint()}')")
+    } catch (e: Exception) {
+        throw Exception("Failed to parse Jimple expression '$expr'", e)
     }
 }
 
