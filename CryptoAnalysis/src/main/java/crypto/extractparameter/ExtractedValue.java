@@ -1,19 +1,23 @@
 package crypto.extractparameter;
 
+import java.util.Set;
+
 import boomerang.jimple.Statement;
+import boomerang.jimple.Val;
 import soot.Value;
+import sync.pds.solver.nodes.Node;
 
 import java.util.List;
 
 public class ExtractedValue {
-	private final Statement stmt;
-	private final Value val;
-	private final List<Statement> dataFlowStatements;
+	private Statement stmt;
+	private Value val;
+	private Set<Node<Statement, Val>> dataFlowPath;
 
-	public ExtractedValue(Statement stmt, Value val, List<Statement> dataFlowStatements) {
+	public ExtractedValue(Statement stmt, Value val, Set<Node<Statement, Val>> dataFlowPath) {
 		this.stmt = stmt;
 		this.val = val;
-		this.dataFlowStatements = dataFlowStatements;
+		this.dataFlowPath = dataFlowPath;
 	}
 
 	public Statement stmt() {
@@ -31,6 +35,10 @@ public class ExtractedValue {
 	@Override
 	public String toString() {
 		return "Extracted Value: " + val + " at " +stmt;
+	}
+	
+	public Set<Node<Statement, Val>> getDataFlowPath() {
+		return dataFlowPath;
 	}
 
 	@Override

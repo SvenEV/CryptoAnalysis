@@ -1,8 +1,20 @@
 package crypto.extractparameter;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Sets;
+
 import boomerang.BackwardQuery;
 import boomerang.Boomerang;
 import boomerang.ForwardQuery;
+import boomerang.callgraph.ObservableICFG;
 import boomerang.jimple.AllocVal;
 import boomerang.jimple.Statement;
 import boomerang.jimple.Val;
@@ -20,9 +32,15 @@ import crypto.typestate.CryptSLMethodToSootMethod;
 import crypto.typestate.LabeledMatcherTransition;
 import crypto.typestate.SootBasedStateMachineGraph;
 import heros.utilities.DefaultValueMap;
-import soot.*;
+import soot.Local;
+import soot.Scene;
+import soot.SootMethod;
+import soot.Type;
+import soot.Unit;
+import soot.Value;
 import soot.jimple.Stmt;
 import soot.jimple.toolkits.ide.icfg.BiDiInterproceduralCFG;
+import sync.pds.solver.nodes.Node;
 import typestate.finiteautomata.MatcherTransition;
 import wpds.impl.Weight.NoWeight;
 
@@ -35,6 +53,7 @@ public class ExtractParameterAnalysis {
 	private Collection<LabeledMatcherTransition> events = Sets.newHashSet();
 	private CryptoScanner cryptoScanner;
 	private Multimap<CallSiteWithParamIndex, ExtractedValue> collectedValues = HashMultimap.create();
+	private Collection<CallSiteWithParamIndex> querySites = Sets.newHashSet();
 	private Multimap<CallSiteWithParamIndex, Type> propagatedTypes = HashMultimap.create();
 	private DefaultValueMap<AdditionalBoomerangQuery, AdditionalBoomerangQuery> additionalBoomerangQuery = new DefaultValueMap<AdditionalBoomerangQuery, AdditionalBoomerangQuery>() {
 		@Override
@@ -42,7 +61,6 @@ public class ExtractParameterAnalysis {
 			return key;
 		}
 	};
-	private Collection<CallSiteWithParamIndex> querySites = Sets.newHashSet();
 
 	public ExtractParameterAnalysis(CryptoScanner cryptoScanner, Map<Statement, SootMethod> allCallsOnObject, SootBasedStateMachineGraph fsm) {
 		this.cryptoScanner = cryptoScanner;
@@ -67,13 +85,7 @@ public class ExtractParameterAnalysis {
 			}
 		}
 		for (AdditionalBoomerangQuery q : additionalBoomerangQuery.keySet()) {
-//			if (reports != null) {
-//				reports.boomerangQueryStarted(query, q);
-//			}
 			q.solve();
-//			if (reports != null) {
-//				reports.boomerangQueryFinished(query, q);
-//			}
 		}
 
 		return additionalBoomerangQuery.keySet();
@@ -120,9 +132,12 @@ public class ExtractParameterAnalysis {
 			return;
 		Value parameter = stmt.getUnit().get().getInvokeExpr().getArg(index);
 		if (!(parameter instanceof Local)) {
-			CallSiteWithParamIndex cs = new CallSiteWithParamIndex(stmt, new Val(parameter, stmt.getMethod()), index, varNameInSpecification);
-			List<Statement> dataFlowStatements = Collections.emptyList(); // TODO: What should dataFlowStatements be in this context?
-			collectedValues.put(cs, new ExtractedValue(stmt, parameter, dataFlowStatements));
+			Val parameterVal = new Val(parameter, stmt.getMethod());
+			CallSiteWithParamIndex cs = new CallSiteWithParamIndex(stmt, parameterVal, index, varNameInSpecification);
+			Set<Node<Statement,Val>> dataFlowPath = Sets.newHashSet();
+			dataFlowPath.add(new Node<Statement, Val>(stmt, parameterVal));
+			collectedValues.put(cs
+					, new ExtractedValue(stmt,parameter, dataFlowPath));
 			querySites.add(cs);
 			return;
 		}
@@ -133,7 +148,30 @@ public class ExtractParameterAnalysis {
 					.getOrCreate(new AdditionalBoomerangQuery(new Statement((Stmt) pred, stmt.getMethod()), queryVal));
 			CallSiteWithParamIndex callSiteWithParamIndex = new CallSiteWithParamIndex(stmt, queryVal, index, varNameInSpecification);
 			querySites.add(callSiteWithParamIndex);
-			query.addListener((q, result) -> {
+			query.addListener(new QueryListener() {
+				@Override
+				public void solved(AdditionalBoomerangQuery q, BackwardBoomerangResults<NoWeight> res) {
+					propagatedTypes.putAll(callSiteWithParamIndex, res.getPropagationType());
+					for (ForwardQuery v : res.getAllocationSites().keySet()) {
+						ExtractedValue extractedValue = null;
+						if(v.var() instanceof AllocVal) {
+							AllocVal allocVal = (AllocVal) v.var();
+							extractedValue = new ExtractedValue(allocVal.allocationStatement(),allocVal.allocationValue(), res.getDataFlowPath(v));
+						} else {
+							extractedValue = new ExtractedValue(v.stmt(),v.var().value(), res.getDataFlowPath(v));
+						}
+						collectedValues.put(callSiteWithParamIndex,
+								extractedValue);
+						
+						//Special handling for toCharArray method (required for NeverTypeOf constraint)
+						if(v.stmt().isCallsite() && v.stmt().getUnit().get().getInvokeExpr().getMethod().getSignature().equals("<java.lang.String: char[] toCharArray()>")) {
+							propagatedTypes.put(callSiteWithParamIndex, Scene.v().getType("java.lang.String"));
+						}
+					}
+				}
+			});
+			// TODO: MERGE!
+			/*query.addListener((q, result) -> {
 				propagatedTypes.putAll(callSiteWithParamIndex, result.getPropagationType());
 				for (ForwardQuery v : result.getAllocationSites().keySet()) {
 					// Obtain statements along data flow path ("relevant statements")
@@ -151,7 +189,7 @@ public class ExtractParameterAnalysis {
 					}
 					collectedValues.put(callSiteWithParamIndex, extractedValue);
 				}
-			});
+			});*/
 		}
 	}
 
@@ -176,13 +214,11 @@ public class ExtractParameterAnalysis {
 		public void solve() {
 			Boomerang boomerang = new Boomerang(new CogniCryptIntAndStringBoomerangOptions()) {
 				@Override
-				public BiDiInterproceduralCFG<Unit, SootMethod> icfg() {
+				public ObservableICFG<Unit, SootMethod> icfg() {
 					return ExtractParameterAnalysis.this.cryptoScanner.icfg();
 				}
 			};
 			res = boomerang.solve(this);
-			boomerang.debugOutput();
-			// log("Solving query "+ accessGraph + " @ " + stmt);
 			for (QueryListener l : Lists.newLinkedList(listeners)) {
 				l.solved(this, res);
 			}
