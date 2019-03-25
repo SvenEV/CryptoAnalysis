@@ -32,10 +32,7 @@ import crypto.rules.CryptSLRule;
 import soot.SootMethod;
 import soot.Unit;
 import soot.Value;
-import soot.jimple.InstanceInvokeExpr;
-import soot.jimple.InvokeExpr;
-import soot.jimple.StaticInvokeExpr;
-import soot.jimple.Stmt;
+import soot.jimple.*;
 import typestate.TransitionFunction;
 
 public class PredicateHandler {

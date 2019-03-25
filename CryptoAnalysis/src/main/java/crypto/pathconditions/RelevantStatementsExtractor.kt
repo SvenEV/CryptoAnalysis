@@ -4,6 +4,8 @@ import crypto.pathconditions.*
 import crypto.pathconditions.debug.prettyPrint
 import crypto.pathconditions.graphviz.*
 import boomerang.*
+import boomerang.callgraph.ObservableICFG
+import boomerang.callgraph.ObservableStaticICFG
 import boomerang.jimple.*
 import boomerang.results.BackwardBoomerangResults
 import soot.Value
@@ -11,6 +13,7 @@ import soot.jimple.*
 import soot.jimple.internal.JimpleLocal
 import soot.jimple.toolkits.ide.icfg.JimpleBasedInterproceduralCFG
 import sync.pds.solver.nodes.*
+import sync.pds.solver.nodes.Node
 import wpds.impl.*
 import java.util.*
 
@@ -163,7 +166,7 @@ private fun <W : Weight> walkAutomaton(
 /** Analysis Step 1: Perform Boomerang query */
 private fun boomerangQuery(query: PathConditionsQuery): BackwardBoomerangResults<Weight.NoWeight> {
     // 1. Create a Boomerang solver.
-    val icfg = JimpleBasedInterproceduralCFG(true)
+    val icfg = ObservableStaticICFG(JimpleBasedInterproceduralCFG(true))
 
     val solver = object : Boomerang(boomerangConfig) {
         override fun icfg() = icfg
@@ -196,4 +199,12 @@ fun extractRelevantStatements(query: PathConditionsQuery): ArrayList<Statement> 
     val boomerangResults = boomerangQuery(query)
     val relevantStatements = extractRelevantStatements(boomerangResults, query)
     return relevantStatements
+}
+
+// TODO: Remove eventually
+fun <W : Weight> BackwardBoomerangResults<W>.getDataFlowPathSven(query: ForwardQuery): Set<Node<Statement, Val>> {
+    val callAutomaton = queryToSolvers().asIterable().first { it.key == query }.value.callAutomaton
+    return walkAutomaton(callAutomaton, query.asNode().fact())
+        .map { Node(it, query.asNode().fact()) }
+        .toSet()
 }

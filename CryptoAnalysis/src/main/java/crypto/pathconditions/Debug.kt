@@ -61,11 +61,11 @@ fun Val.prettyPrint(replacements: Map<JimpleLocal, Value> = emptyMap()) =
 
 fun Statement.prettyPrint(replacements: Map<JimpleLocal, Value> = emptyMap()) = when {
     method == null && unit.isPresent -> unit.get().prettyPrint(replacements)
-    method != null && unit.isPresent -> method?.name + " { " + unit.get().prettyPrint(replacements) + " }"
+    method != null && unit.isPresent -> "${method.declaringClass.name}.${method.name} { " + unit.get().prettyPrint(replacements) + " }"
     else -> ""
 }
 
 fun Statement.prettyPrintRefined() = when {
     method == null || !unit.isPresent -> ""
-    else -> method?.name + " { " + refineUnitToString(unit.get(), method) + "; } ↻"
+    else -> "${method.declaringClass.name}.${method.name} { " + refineUnitToString(unit.get(), method) + "; } ↻"
 }
