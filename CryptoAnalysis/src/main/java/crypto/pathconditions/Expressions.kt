@@ -171,6 +171,10 @@ data class JNot(val op: JExpression) : JExpression() {
 }
 
 // BINOPEXPR
+data class JCompare(val left: JExpression, val right: JExpression) : JExpression() {
+    override fun toString() = super.toString()
+}
+
 data class JCompareGreater(val left: JExpression, val right: JExpression) : JExpression() {
     override fun toString() = super.toString()
 }
@@ -391,6 +395,7 @@ fun parseJimpleExpression(expr: ValueWithContext, typeHint: TypeHint): JExpressi
                 val op1 = parseJimpleExpression(expr.copy(value = v.op1), typeHint)
                 val op2 = parseJimpleExpression(expr.copy(value = v.op2), typeHint)
                 when (v) {
+                    is CmpExpr -> JCompare(op1, op2)
                     is CmpgExpr -> JCompareGreater(op1, op2)
                     is CmplExpr -> JCompareLess(op1, op2)
                     is AddExpr -> JAdd(op1, op2)
@@ -452,6 +457,7 @@ val JExpression.type
         is JThisRef -> thisType
         is JParameterRef -> paramType
         is JNot -> BooleanType.v()
+        is JCompare -> left.type
         is JCompareGreater -> left.type
         is JCompareLess -> left.type
         is JAdd -> left.type
@@ -491,6 +497,7 @@ val JExpression.precedence
         is JThisRef -> MAX_PRECEDENCE
         is JParameterRef -> MAX_PRECEDENCE
         is JNot -> 14
+        is JCompare -> 9
         is JCompareGreater -> 9
         is JCompareLess -> 9
         is JAdd -> 11
@@ -529,6 +536,7 @@ val JExpression.associativity
         is JThisRef -> Associativity.NotAssociative
         is JParameterRef -> Associativity.NotAssociative
         is JNot -> Associativity.RightToLeft
+        is JCompare -> Associativity.NotAssociative
         is JCompareGreater -> Associativity.NotAssociative
         is JCompareLess -> Associativity.NotAssociative
         is JAdd -> Associativity.LeftToRight
@@ -561,6 +569,7 @@ fun JExpression.toString(format: WithContextFormat): String = when (this) {
     is JThisRef -> "this"
     is JParameterRef -> "\$param$index" // TODO: Parameter names seem not to be preserved in Soot
     is JNot -> "!${childToString(op, format, OpPos.Right)}"
+    is JCompare -> "${childToString(left, format)} cmp ${childToString(right, format)}"
     is JCompareGreater -> "${childToString(left, format)} cmpg ${childToString(right, format)}"
     is JCompareLess -> "${childToString(left, format)} cmpl ${childToString(right, format)}"
     is JAdd -> "${childToString(left, format, OpPos.Left)} + ${childToString(right, format, OpPos.Right)}"

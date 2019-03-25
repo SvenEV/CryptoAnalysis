@@ -253,6 +253,7 @@ fun Z3Solver.encode(expr: JExpression, expectedSort: Sort): Expr =
             is JInterfaceInvoke -> getOrCreateSymbol(expr, expectedSort)
             is JStaticInvoke -> getOrCreateSymbol(expr, expectedSort)
             is JDynamicInvoke -> getOrCreateSymbol(expr, expectedSort)
+            is JCompare -> throw IllegalArgumentException("${expr.javaClass.name} can't be Z3-encoded and should be eliminated beforehand")
             is JCompareGreater -> throw IllegalArgumentException("${expr.javaClass.name} can't be Z3-encoded and should be eliminated beforehand")
             is JCompareLess -> throw IllegalArgumentException("${expr.javaClass.name} can't be Z3-encoded and should be eliminated beforehand")
             is JNew -> getOrCreateSymbol(expr, expectedSort)
@@ -275,7 +276,10 @@ private fun Z3Solver.intToBool(v: Int) = when (v) {
 //
 
 private fun Z3Solver.decodeValue(expr: Expr): JExpression = when {
-    expr.isIntNum -> JConstant(WithContext(IntConstant.v(Integer.parseInt(expr.toString())), null, null))
+    expr.isIntNum ->
+        // TODO: Choose int or long on Z3-decode?
+        //JConstant(WithContext(IntConstant.v(Integer.parseInt(expr.toString())), null, null))
+        JConstant(WithContext(LongConstant.v(expr.toString().toLong()), null, null))
     expr.isFloatNum -> {
         val v = constructDouble(expr as FPNum)
         JConstant(WithContext(DoubleConstant.v(v), null, null))
@@ -299,7 +303,7 @@ fun Z3Solver.decode(expr: Expr): JExpression =
             expr.isAnd -> JAnd(decode(expr.args[0]), decode(expr.args[1]))
             expr.isOr -> JOr(decode(expr.args[0]), decode(expr.args[1]))
             expr.isEq -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JEquals)
-            expr.isNot && expr.args[0].isEq -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JNotEquals)
+            expr.isNot && expr.args[0].isEq -> JCondition(decode(expr.args[0].args[0]), decode(expr.args[0].args[1]), JNotEquals)
             expr.isGT || expr.isFPGT -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JGreaterThan)
             expr.isGE || expr.isFPGE -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JGreaterOrEqual)
             expr.isLT || expr.isFPLT -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JLessThan)

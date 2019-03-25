@@ -128,11 +128,18 @@ fun refine(expr: JExpression): JExpression =
                     refined.symbol is JNotEquals && refined.right is JFalse -> refined.left
                     refined.symbol is JNotEquals && refined.left is JFalse -> refined.right
 
+                    refined.left is JCompare && ((refined.right as? JConstant)?.v?.value as? IntConstant)?.value == 0 -> {
+                        // Turn e.g. '(x cmp y) <= 0' into 'x <= y'
+                        val cmp = refined.left as JCompare
+                        JCondition(refine(cmp.left), refine(cmp.right), refined.symbol)
+                    }
+
                     refined.left is JCompareGreater && ((refined.right as? JConstant)?.v?.value as? IntConstant)?.value == 0 -> {
-                        // Turn '(x cmpg y) <= 0' into 'x <= y'
+                        // Turn e.g. '(x cmpg y) <= 0' into 'x <= y'
                         val cmpg = refined.left as JCompareGreater
                         JCondition(refine(cmpg.left), refine(cmpg.right), refined.symbol)
                     }
+
                     else -> refined
                 }
             }
