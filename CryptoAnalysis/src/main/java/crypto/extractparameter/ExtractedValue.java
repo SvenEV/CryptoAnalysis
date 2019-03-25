@@ -28,10 +28,6 @@ public class ExtractedValue {
 		return val;
 	}
 
-	public List<Statement> getDataFlowStatements() {
-		return dataFlowStatements;
-	}
-
 	@Override
 	public String toString() {
 		return "Extracted Value: " + val + " at " +stmt;

@@ -55,6 +55,8 @@ public class IncompleteOperationError extends ErrorWithObjectAllocation{
 			}
 		}
 		msg.append(Joiner.on(", ").join(altMethods));
+		msg.append(System.lineSeparator());
+		msg.append(getPathConditionsAsString());
 		return msg.toString();
 	}
 

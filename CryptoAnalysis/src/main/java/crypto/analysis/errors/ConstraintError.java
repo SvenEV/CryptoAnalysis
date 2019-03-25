@@ -2,6 +2,7 @@ package crypto.analysis.errors;
 
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.google.common.base.CharMatcher;
 
@@ -50,6 +51,7 @@ public class ConstraintError extends ErrorWithObjectAllocation{
 	
 	@Override
 	public Set<Node<Statement, Val>> getDataFlowPath() {
+		// TODO: This doesn't give us the same statements as our custom implementation. Investigate differences and reasons!
 		return callSiteWithParamIndex.getVal().getDataFlowPath();
 	}
 
@@ -60,17 +62,11 @@ public class ConstraintError extends ErrorWithObjectAllocation{
 
 	@Override
 	public String toErrorMarkerString() {
-
-
-		List<PathConditionResult> conditions = computeRefinedSimplifiedPathConditions(callSiteWithParamIndex.getVal().getDataFlowStatements());
-		String conditionsString = conditions.stream()
-				.map(c -> "    * " + c.getCondition().prettyPrint(WithContextFormat.ContextFree))
-				.collect(Collectors.joining(System.lineSeparator()));
-
-		return callSiteWithParamIndex.toString() + evaluateBrokenConstraint(brokenConstraint) + System.lineSeparator() + conditionsString;
+		return callSiteWithParamIndex.toString() +
+				evaluateBrokenConstraint(brokenConstraint) +
+				System.lineSeparator() +
+				getPathConditionsAsString();
 	}
-	
-	
 
 	private String evaluateBrokenConstraint(final ISLConstraint brokenConstraint) {
 		StringBuilder msg = new StringBuilder();

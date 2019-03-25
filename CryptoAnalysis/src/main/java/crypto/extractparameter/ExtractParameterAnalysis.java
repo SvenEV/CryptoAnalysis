@@ -162,7 +162,7 @@ public class ExtractParameterAnalysis {
 						}
 						collectedValues.put(callSiteWithParamIndex,
 								extractedValue);
-						
+
 						//Special handling for toCharArray method (required for NeverTypeOf constraint)
 						if(v.stmt().isCallsite() && v.stmt().getUnit().get().getInvokeExpr().getMethod().getSignature().equals("<java.lang.String: char[] toCharArray()>")) {
 							propagatedTypes.put(callSiteWithParamIndex, Scene.v().getType("java.lang.String"));
