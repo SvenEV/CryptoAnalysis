@@ -292,19 +292,29 @@ fun or(left: JExpression, right: JExpression): JExpression = when {
 }
 
 /**
- * Contains a targeted workaround for bool/int type incompatibility when constructing a [JConditional]:
- * If one part is of type Boolean, treat the other as Boolean, too.
+ * Workaround for bool/int type incompatibility when constructing certain expressions:
+ * If one expression is of type Boolean and the other is an [IntConstant], parse the constant as Boolean.
  */
-fun conditional(condition: JExpression, trueExpr: JExpression, falseExpr: JExpression): JExpression {
-    val leftIsBool = trueExpr.type == BooleanType.v()
-    val rightIsBool = falseExpr.type == BooleanType.v()
-    val leftAsInt = (trueExpr as? JConstant)?.v?.value as? IntConstant
-    val rightAsInt = (falseExpr as? JConstant)?.v?.value as? IntConstant
+fun harmonizeIntBool(left: JExpression, right: JExpression): Pair<JExpression, JExpression> {
+    val leftIsBool = left.type == BooleanType.v()
+    val rightIsBool = right.type == BooleanType.v()
+    val leftAsInt = (left as? JConstant)?.v?.value as? IntConstant
+    val rightAsInt = (right as? JConstant)?.v?.value as? IntConstant
     return when {
-        leftIsBool && rightAsInt != null -> JConditional(condition, trueExpr, intToBool(rightAsInt.value))
-        rightIsBool && leftAsInt != null -> JConditional(condition, intToBool(leftAsInt.value), falseExpr)
-        else -> JConditional(condition, trueExpr, falseExpr)
+        leftIsBool && rightAsInt != null -> left to intToBool(rightAsInt.value)
+        rightIsBool && leftAsInt != null -> intToBool(leftAsInt.value) to right
+        else -> left to right
     }
+}
+
+fun conditional(condition: JExpression, trueExpr: JExpression, falseExpr: JExpression): JConditional {
+    val (l, r) = harmonizeIntBool(trueExpr, falseExpr)
+    return JConditional(condition, l, r)
+}
+
+fun condition(left: JExpression, right: JExpression, symbol: LeafConditionSymbol): JCondition {
+    val (l, r) = harmonizeIntBool(left, right)
+    return JCondition(l, r, symbol)
 }
 
 fun not(cond: JExpression): JExpression = when (cond) {
@@ -403,7 +413,7 @@ fun parseJimpleExpression(expr: ValueWithContext, typeHint: TypeHint): JExpressi
                     is MulExpr -> JMultiply(op1, op2)
                     is DivExpr -> JDivide(op1, op2)
                     is RemExpr -> JRemainder(op1, op2)
-                    is ConditionExpr -> JCondition(op1, op2, when (v) {
+                    is ConditionExpr -> condition(op1, op2, when (v) {
                         is EqExpr -> JEquals
                         is NeExpr -> JNotEquals
                         is GtExpr -> JGreaterThan

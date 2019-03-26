@@ -117,7 +117,7 @@ fun refine(expr: JExpression): JExpression =
             is JDivide -> JDivide(refine(expr.left), refine(expr.right))
             is JRemainder -> JRemainder(refine(expr.left), refine(expr.right))
             is JCondition -> {
-                var refined = JCondition(refine(expr.left), refine(expr.right), expr.symbol)
+                var refined = condition(refine(expr.left), refine(expr.right), expr.symbol)
                 when {
                     refined.symbol is JEquals && refined.right is JTrue -> refined.left
                     refined.symbol is JEquals && refined.left is JTrue -> refined.right
@@ -131,13 +131,13 @@ fun refine(expr: JExpression): JExpression =
                     refined.left is JCompare && ((refined.right as? JConstant)?.v?.value as? IntConstant)?.value == 0 -> {
                         // Turn e.g. '(x cmp y) <= 0' into 'x <= y'
                         val cmp = refined.left as JCompare
-                        JCondition(refine(cmp.left), refine(cmp.right), refined.symbol)
+                        condition(refine(cmp.left), refine(cmp.right), refined.symbol)
                     }
 
                     refined.left is JCompareGreater && ((refined.right as? JConstant)?.v?.value as? IntConstant)?.value == 0 -> {
                         // Turn e.g. '(x cmpg y) <= 0' into 'x <= y'
                         val cmpg = refined.left as JCompareGreater
-                        JCondition(refine(cmpg.left), refine(cmpg.right), refined.symbol)
+                        condition(refine(cmpg.left), refine(cmpg.right), refined.symbol)
                     }
 
                     else -> refined
