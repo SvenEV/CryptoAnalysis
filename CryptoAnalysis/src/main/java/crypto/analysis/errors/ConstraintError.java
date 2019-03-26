@@ -51,10 +51,8 @@ public class ConstraintError extends ErrorWithObjectAllocation{
 	
 	@Override
 	public Set<Node<Statement, Val>> getDataFlowPath() {
-		// TODO: This doesn't give us the same statements as our custom implementation. Investigate differences and reasons!
 		return callSiteWithParamIndex.getVal().getDataFlowPath();
 	}
-
 
 	public CallSiteWithExtractedValue getCallSiteWithExtractedValue() {
 		return callSiteWithParamIndex;

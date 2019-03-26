@@ -1,18 +1,16 @@
 package crypto.extractparameter;
 
-import java.util.Set;
-
 import boomerang.jimple.Statement;
 import boomerang.jimple.Val;
 import soot.Value;
 import sync.pds.solver.nodes.Node;
 
-import java.util.List;
+import java.util.Set;
 
 public class ExtractedValue {
-	private Statement stmt;
-	private Value val;
-	private Set<Node<Statement, Val>> dataFlowPath;
+	private final Statement stmt;
+	private final Value val;
+	private final Set<Node<Statement, Val>> dataFlowPath;
 
 	public ExtractedValue(Statement stmt, Value val, Set<Node<Statement, Val>> dataFlowPath) {
 		this.stmt = stmt;

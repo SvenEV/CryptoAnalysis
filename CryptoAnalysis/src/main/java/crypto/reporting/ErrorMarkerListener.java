@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 
 import com.google.common.base.CharMatcher;
 import com.google.common.collect.HashBasedTable;
@@ -50,14 +51,17 @@ import typestate.TransitionFunction;
  */
 public class ErrorMarkerListener extends CrySLAnalysisListener {
 
-	protected final Table<SootClass, SootMethod, Set<AbstractError>> errorMarkers = HashBasedTable.create(); 
-	protected final Map<Class, Integer> errorMarkerCount = new HashMap<Class, Integer>();
-	protected final List<IAnalysisSeed> secureObjects = new ArrayList<IAnalysisSeed>();
-	
+	protected final Table<SootClass, SootMethod, Set<AbstractError>> errorMarkers = HashBasedTable.create();
+	protected final Map<Class, Integer> errorMarkerCount = new HashMap<>();
+	protected final List<IAnalysisSeed> secureObjects = new ArrayList<>();
+
 	private void addMarker(AbstractError error) {
+		if (!filterError(error))
+			return;
+
 		SootMethod method = error.getErrorLocation().getMethod();
 		SootClass sootClass = method.getDeclaringClass();
-		
+
 		Set<AbstractError> set = errorMarkers.get(sootClass, method);
 		if(set == null){
 			set = Sets.newHashSet();
@@ -72,54 +76,11 @@ public class ErrorMarkerListener extends CrySLAnalysisListener {
 		}
 		errorMarkers.put(sootClass, method, set);
 	}
-	
+
 	@Override
 	public void reportError(AbstractError error) {
-		error.accept(new ErrorVisitor(){
-
-			@Override
-			public void visit(ConstraintError constraintError) {
-				addMarker(constraintError);
-			}
-
-			@Override
-			public void visit(ForbiddenMethodError forbiddenMethodError) {
-				addMarker(forbiddenMethodError);
-			}
-
-			@Override
-			public void visit(IncompleteOperationError incompleteOperationError) {
-				addMarker(incompleteOperationError);
-			}
-
-			@Override
-			public void visit(TypestateError typestateError) {
-				addMarker(typestateError);
-			}
-
-			@Override
-			public void visit(RequiredPredicateError predicateError) {
-				addMarker(predicateError);
-			}
-
-			@Override
-			public void visit(ImpreciseValueExtractionError extractionError) {
-				addMarker(extractionError);
-			}
-
-			@Override
-			public void visit(NeverTypeOfError neverTypeOfError) {
-				addMarker(neverTypeOfError);
-			}
-
-			@Override
-			public void visit(PredicateContradictionError predicateContradictionError) {
-				addMarker(predicateContradictionError);
-				
-			}});
+		addMarker(error);
 	}
-	
-
 
 	@Override
 	public void afterAnalysis() {
@@ -139,7 +100,6 @@ public class ErrorMarkerListener extends CrySLAnalysisListener {
 	@Override
 	public void beforeAnalysis() {
 		// Nothing
-
 	}
 
 	@Override
@@ -183,7 +143,7 @@ public class ErrorMarkerListener extends CrySLAnalysisListener {
 
 	@Override
 	public void onSeedFinished(final IAnalysisSeed analysisObject, final ForwardBoomerangResults<TransitionFunction> arg1) {
-		
+
 	}
 	@Override
 	public void onSecureObjectFound(final IAnalysisSeed analysisObject) {
@@ -195,10 +155,16 @@ public class ErrorMarkerListener extends CrySLAnalysisListener {
 		//Nothing
 	}
 
+	/** Checks whether an error should be recorded (true) or ignored (false) */
+	public boolean filterError(AbstractError error) {
+		return true;
+	}
+
 	@Override
 	public void seedStarted(final IAnalysisSeed arg0) {
 		// Nothing
 	}
+
 	public static String filterQuotes(final String dirty) {
 		return CharMatcher.anyOf("\"").removeFrom(dirty);
 	}

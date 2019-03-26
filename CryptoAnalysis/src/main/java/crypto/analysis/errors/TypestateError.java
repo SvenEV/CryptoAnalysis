@@ -16,7 +16,7 @@ import soot.jimple.Stmt;
 
 public class TypestateError extends ErrorWithObjectAllocation{
 
-	private Collection<SootMethod> expectedMethodCalls;
+	private final Collection<SootMethod> expectedMethodCalls;
 
 	public TypestateError(Statement stmt, CryptSLRule rule, IAnalysisSeed object, Collection<SootMethod> expectedMethodCalls) {
 		super(stmt, rule, object);

@@ -21,7 +21,7 @@ import soot.SootClass;
 import soot.SootMethod;
 import soot.util.EscapedWriter;
 
-public class CommandLineReporter extends ErrorMarkerListener {
+public class CommandLineReporter extends PathConditionsErrorMarkerListener {
 
 	private File outputFolder;
 	private List<CryptSLRule> rules;

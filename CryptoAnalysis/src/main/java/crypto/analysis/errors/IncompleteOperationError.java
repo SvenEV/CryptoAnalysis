@@ -17,8 +17,8 @@ import soot.jimple.Stmt;
 
 public class IncompleteOperationError extends ErrorWithObjectAllocation{
 
-	private Val errorVariable;
-	private Collection<SootMethod> expectedMethodCalls;
+	private final Val errorVariable;
+	private final Collection<SootMethod> expectedMethodCalls;
 
 	public IncompleteOperationError(Statement errorLocation,
 			Val errorVariable, CryptSLRule rule, IAnalysisSeed objectLocation, Collection<SootMethod> expectedMethodsToBeCalled) {
@@ -34,7 +34,7 @@ public class IncompleteOperationError extends ErrorWithObjectAllocation{
 	public Collection<SootMethod> getExpectedMethodCalls() {
 		return expectedMethodCalls;
 	}
-	
+
 	public void accept(ErrorVisitor visitor){
 		visitor.visit(this);
 	}

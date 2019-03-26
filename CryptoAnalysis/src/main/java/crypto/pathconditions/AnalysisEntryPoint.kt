@@ -15,7 +15,7 @@ import soot.Transform
  * (determine relevant statements and compute, refine and simplify conditions)
  */
 
-fun solve(query: PathConditionsQuery): List<PathConditionResult> {
+fun solve(query: PathConditionsQuery): Set<PathConditionResult> {
     val relevantStatements = extractRelevantStatements(query)
     return computeRefinedSimplifiedPathConditions(relevantStatements)
 }
@@ -24,7 +24,7 @@ fun computeRefinedSimplifiedPathConditions(relevantStatements: Iterable<Statemen
     computePathConditions(relevantStatements)
         .map { PathConditionResult(it.method, simplifyTerm(refine(it.condition))) }
         .filter { it.condition !is JTrue } // ignore TRUE conditions
-        .toList()
+        .toSet()
 
 fun pathConditionsAnalysisTransformer(createQuery: () -> PathConditionsQuery) = object : SceneTransformer() {
     override fun internalTransform(phaseName: String?, options: MutableMap<String, String>?) {
