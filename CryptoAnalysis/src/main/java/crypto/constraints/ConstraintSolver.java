@@ -11,6 +11,7 @@ import java.util.Map.Entry;
 import java.util.stream.Collectors;
 import java.util.Set;
 
+import boomerang.jimple.Statement;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
