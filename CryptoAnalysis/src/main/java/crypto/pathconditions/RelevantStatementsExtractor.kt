@@ -200,11 +200,3 @@ fun extractRelevantStatements(query: PathConditionsQuery): ArrayList<Statement> 
     val relevantStatements = extractRelevantStatements(boomerangResults, query)
     return relevantStatements
 }
-
-// TODO: Remove eventually
-fun <W : Weight> BackwardBoomerangResults<W>.getDataFlowPathSven(query: ForwardQuery): Set<Node<Statement, Val>> {
-    val callAutomaton = queryToSolvers().asIterable().first { it.key == query }.value.callAutomaton
-    return walkAutomaton(callAutomaton, query.asNode().fact())
-        .map { Node(it, query.asNode().fact()) }
-        .toSet()
-}
