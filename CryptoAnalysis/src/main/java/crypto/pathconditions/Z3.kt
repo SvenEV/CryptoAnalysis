@@ -121,6 +121,30 @@ private fun Z3Solver.getOrCreateSymbol(v: JExpression, sort: Sort): Expr {
     return context.mkConst(symbol, sort)
 }
 
+private fun Z3Solver.tryEncodeWellKnownCall(expr: JVirtualInvoke): Expr? = when {
+    expr.method.toString() == "<java.lang.String: boolean equals(java.lang.Object)>" -> {
+        val base = (expr.base as? JConstant)?.v?.value as? StringConstant
+        val other = (expr.args.elementAtOrNull(0) as? JConstant)?.v?.value as? StringConstant
+        when {
+            base != null && other != null -> if (base.value == other.value) trueExpr else falseExpr
+            else -> null
+        }
+    }
+    else -> null
+}
+
+private fun Z3Solver.tryEncodeWellKnownStaticCall(expr: JStaticInvoke): Expr? = when {
+    expr.method.toString() == "<kotlin.jvm.internal.Intrinsics: boolean areEqual(java.lang.Object,java.lang.Object)>" -> {
+        val op1 = (expr.args.elementAtOrNull(0) as? JConstant)?.v?.value as? StringConstant
+        val op2 = (expr.args.elementAtOrNull(0) as? JConstant)?.v?.value as? StringConstant
+        when {
+            op1 != null && op2 != null -> if (op1.value == op2.value) trueExpr else falseExpr
+            else -> null
+        }
+    }
+    else -> null
+}
+
 /** Helper function that produces either an integer or a floating point operation, depending on the sort of operands */
 private fun Context.mkArithOrFPOp(
     arithOp: (Array<ArithExpr>) -> ArithExpr,
@@ -248,10 +272,10 @@ fun Z3Solver.encode(expr: JExpression, expectedSort: Sort): Expr =
             }
 
             is JInstanceOf -> getOrCreateSymbol(expr, expectedSort) // TODO: This could be improved for certain cases
-            is JVirtualInvoke -> getOrCreateSymbol(expr, expectedSort)
+            is JVirtualInvoke -> tryEncodeWellKnownCall(expr) ?: getOrCreateSymbol(expr, expectedSort)
             is JSpecialInvoke -> getOrCreateSymbol(expr, expectedSort)
             is JInterfaceInvoke -> getOrCreateSymbol(expr, expectedSort)
-            is JStaticInvoke -> getOrCreateSymbol(expr, expectedSort)
+            is JStaticInvoke -> tryEncodeWellKnownStaticCall(expr) ?: getOrCreateSymbol(expr, expectedSort)
             is JDynamicInvoke -> getOrCreateSymbol(expr, expectedSort)
             is JCompare -> throw IllegalArgumentException("${expr.javaClass.name} can't be Z3-encoded and should be eliminated beforehand")
             is JCompareGreater -> throw IllegalArgumentException("${expr.javaClass.name} can't be Z3-encoded and should be eliminated beforehand")
