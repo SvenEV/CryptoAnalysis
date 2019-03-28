@@ -46,10 +46,4 @@ public abstract class ErrorWithObjectAllocation extends AbstractError {
 	public Set<PathConditionResult> getPathConditions() {
 		return pathConditions.getValue();
 	}
-
-	public String getPathConditionsAsString() {
-		return pathConditions.getValue().stream()
-				.map(c -> "    * " + c.getCondition().prettyPrint(WithContextFormat.ContextFree))
-				.collect(Collectors.joining(System.lineSeparator()));
-	}
 }

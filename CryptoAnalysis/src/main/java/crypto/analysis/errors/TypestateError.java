@@ -54,8 +54,6 @@ public class TypestateError extends ErrorWithObjectAllocation{
 			msg.append(". Expect a call to one of the following methods ");
 			msg.append(Joiner.on(",").join(altMethods));
 		}
-		msg.append(System.lineSeparator());
-		msg.append(getPathConditionsAsString());
 		return msg.toString();
 	}
 

@@ -61,9 +61,7 @@ public class ConstraintError extends ErrorWithObjectAllocation{
 	@Override
 	public String toErrorMarkerString() {
 		return callSiteWithParamIndex.toString() +
-				evaluateBrokenConstraint(brokenConstraint) +
-				System.lineSeparator() +
-				getPathConditionsAsString();
+				evaluateBrokenConstraint(brokenConstraint);
 	}
 
 	private String evaluateBrokenConstraint(final ISLConstraint brokenConstraint) {
