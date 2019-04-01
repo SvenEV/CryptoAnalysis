@@ -5,22 +5,12 @@ import crypto.pathconditions.computeRefinedSimplifiedPathConditions
 import crypto.pathconditions.expressions.WithContextFormat
 import crypto.pathconditions.expressions.toString
 import org.junit.Test
-import soot.Scene
-import soot.SootClass
 import soot.jimple.Stmt
 import javax.crypto.Cipher
 import kotlin.reflect.KFunction
 import kotlin.test.assertEquals
 
-class PathConditionsTests {
-
-    private val klass: SootClass
-
-    init {
-        setupSoot(this.javaClass.name)
-        klass = Scene.v().loadClass(this.javaClass.name, SootClass.BODIES)
-    }
-
+class PathConditionsTests : SootBasedTest() {
     /**
      * Given a set of relevant statements, tests whether the correct path conditions are computed.
      * @param relevantLines The line numbers (with 0 referring to the first statement in [testMethod]) of relevant statements

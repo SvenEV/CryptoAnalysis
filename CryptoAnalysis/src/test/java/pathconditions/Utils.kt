@@ -61,3 +61,12 @@ fun Unit.lineNumber() =
     tags.ofType<LineNumberTag>().firstOrNull()?.lineNumber ?: -1
 
 fun nop() {}
+
+abstract class SootBasedTest {
+    protected val klass: SootClass
+
+    init {
+        setupSoot(this.javaClass.name)
+        klass = Scene.v().loadClass(this.javaClass.name, SootClass.BODIES)
+    }
+}
