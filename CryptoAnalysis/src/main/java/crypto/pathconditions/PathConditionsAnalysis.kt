@@ -10,8 +10,10 @@ import crypto.pathconditions.z3.*
 import soot.*
 import soot.Unit
 import soot.jimple.IfStmt
+import soot.jimple.spark.ondemand.genericutil.ImmutableStack
 import soot.toolkits.graph.*
 import soot.toolkits.scalar.ForwardBranchedFlowAnalysis
+import java.util.*
 
 //
 // The intra-procedural path conditions analysis implemented as a standard Soot ForwardBranchedFlowAnalysis
@@ -65,9 +67,21 @@ class MBox<T>(var content: T) {
     override fun hashCode() = content?.hashCode() ?: 0
 }
 
-typealias PathConditionBox = MBox<JExpression>
+data class Fact(val condition: JExpression, val usage: BlockUsage, val stack: ImmutableStack<BlockUsage>)
 
-private class PathConditionsAnalysis(graph: UnitGraph, private val method: SootMethod) :
+typealias PathConditionBox = MBox<Fact>
+
+enum class BlockUsage {
+    None, // kein Eigen- und kein Fremd-Statement im Block
+    Foreign, // kein Eigen-, aber mind. 1 Fremd-Statement im Block
+    Owned // mind. 1 Eigen-Statement im Block
+}
+
+private class PathConditionsAnalysis(
+    graph: UnitGraph,
+    private val method: SootMethod,
+    private val ownRelevantStatements: Set<Statement>,
+    private val foreignRelevantStatements: Set<Statement>) :
     ForwardBranchedFlowAnalysis<PathConditionBox>(graph) {
 
     init {
@@ -75,10 +89,19 @@ private class PathConditionsAnalysis(graph: UnitGraph, private val method: SootM
         doAnalysis()
     }
 
-    override fun newInitialFlow() = PathConditionBox(JTrue)
+    override fun newInitialFlow() = PathConditionBox(Fact(JTrue, BlockUsage.None, ImmutableStack.emptyStack()))
 
-    override fun merge(left: PathConditionBox?, right: PathConditionBox?, merged: PathConditionBox?) {
-        merged!!.content = or(left!!.content, right!!.content)
+    override fun merge(left: PathConditionBox, right: PathConditionBox, merged: PathConditionBox) {
+        val condition = when {
+            left.content.usage == BlockUsage.Foreign -> right.content.condition // take only right condition (right can't be Foreign at this point)
+            right.content.usage == BlockUsage.Foreign -> left.content.condition // take only left condition (left can't be Foreign at this point)
+            else -> or(left.content.condition, right.content.condition)
+        }
+
+        // Assumption: left and right have the same stack, so just use left
+        val parentUsage = left.content.stack.peek()
+        val remainingStack = left.content.stack.pop()
+        merged.content = Fact(condition, parentUsage, remainingStack)
     }
 
     override fun copy(source: PathConditionBox?, target: PathConditionBox?) {
@@ -86,28 +109,50 @@ private class PathConditionsAnalysis(graph: UnitGraph, private val method: SootM
     }
 
     override fun flowThrough(
-        input: PathConditionBox?,
+        input: PathConditionBox,
         stmt: Unit?,
         fallOuts: List<PathConditionBox>?,
         branchOuts: List<PathConditionBox>?
     ) = when (stmt) {
         is IfStmt -> {
             val condition = parseJimpleExpression(ValueWithContext(stmt.condition, stmt, method), ForceBool)
-            val trueCondition = and(input!!.content, condition)
-            val falseCondition = and(input.content, not(condition))
-            branchOuts!![0].content = trueCondition
-            fallOuts!![0].content = falseCondition
+            val trueCondition = and(input.content.condition, condition)
+            val falseCondition = and(input.content.condition, not(condition))
+
+            val newStack = input.content.stack.push(input.content.usage)
+            val trueFact = Fact(trueCondition, BlockUsage.None, newStack)
+            val falseFact = Fact(falseCondition, BlockUsage.None, newStack)
+
+            branchOuts!![0].content = trueFact
+            fallOuts!![0].content = falseFact
             Unit
         }
         else -> {
+            val currentUsage = input.content.usage
+            val isOwnStmt = ownRelevantStatements.any { it.unit.get() == stmt }
+            val isForeignStmt = foreignRelevantStatements.any { it.unit.get() == stmt }
+
+            val usageToPropagate = when (currentUsage) {
+                BlockUsage.Owned -> BlockUsage.Owned
+                BlockUsage.Foreign -> when {
+                    isOwnStmt -> BlockUsage.Owned
+                    else -> BlockUsage.Foreign
+                }
+                BlockUsage.None -> when {
+                    isOwnStmt -> BlockUsage.Owned
+                    isForeignStmt -> BlockUsage.Foreign
+                    else -> BlockUsage.None
+                }
+            }
+
             if (stmt!!.branches()) {
                 if (branchOuts!!.any())
-                    branchOuts[0].content = input!!.content
+                    branchOuts[0].content = input.content.copy(usage = usageToPropagate)
                 Unit
             }
             else {
                 if (fallOuts!!.any())
-                    fallOuts[0].content = input!!.content
+                    fallOuts[0].content = input.content.copy(usage = usageToPropagate)
                 Unit
             }
         }
@@ -125,14 +170,15 @@ fun simplifyTerm(term: JExpression): JExpression {
 
 data class PathConditionResult(val method: SootMethod, val condition: JExpression)
 
-fun computePathConditions(relevantStatements: Iterable<Statement>) = relevantStatements
+fun computePathConditions(relevantStatements: Iterable<Statement>, foreignRelevantStatements: Iterable<Statement>) = relevantStatements
     .asSequence()
     .distinct()
     .groupBy { it.method }
     .map { (method, relevantStmts) ->
-        val result = PathConditionsAnalysis(ExceptionalUnitGraph(method.activeBody), method)
+        val cfg = ExceptionalUnitGraph(method.activeBody)
+        val result = PathConditionsAnalysis(cfg, method, relevantStatements.toSet(), foreignRelevantStatements.toSet())
         val methodCondition = relevantStmts
-            .map { result.getFlowBefore(it.unit.get()).content }
+            .map { result.getFlowBefore(it.unit.get()).content.condition }
             .filter { it != JTrue } // ignore relevant statements that are reached unconditionally
             .asSequence()
             .joinAnd()

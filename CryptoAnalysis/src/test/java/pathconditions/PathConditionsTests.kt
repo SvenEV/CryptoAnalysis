@@ -10,6 +10,8 @@ import javax.crypto.Cipher
 import kotlin.reflect.KFunction
 import kotlin.test.assertEquals
 
+data class DataFlow(val relevantLines: Set<Int>, val expectedCondition: String)
+
 class PathConditionsTests : SootBasedTest() {
     /**
      * Given a set of relevant statements, tests whether the correct path conditions are computed.
@@ -17,7 +19,7 @@ class PathConditionsTests : SootBasedTest() {
      * @param expectedConditions Expected conditions as Strings
      * @param testMethod The method to be analyzed
      */
-    fun test(relevantLines: Set<Int>, expectedConditions: Set<String>, testMethod: KFunction<kotlin.Unit>) {
+    fun test(dataFlows: Set<DataFlow>, testMethod: KFunction<kotlin.Unit>) {
         val method = klass.methods.single { it.name == testMethod.name }
         val units = method.retrieveActiveBody().units
 
@@ -25,18 +27,25 @@ class PathConditionsTests : SootBasedTest() {
             .map { it.lineNumber() }
             .first { it >= 0 }
 
-        val relevantStatements = units
-            .filter { it.lineNumber() - firstLine in relevantLines }
-            .map { Statement(it as Stmt, method) }
+        dataFlows.forEach { flow ->
 
-        val conditions = computeRefinedSimplifiedPathConditions(relevantStatements)
+            val relevantStatements = units
+                .filter { it.lineNumber() - firstLine in flow.relevantLines }
+                .map { Statement(it as Stmt, method) }
 
-        val conditionsAsString = conditions
-            .map { it.condition.toString(WithContextFormat.ContextFree) }
-            .toSet()
+            val foreignRelevantStmts = units
+                .filter { it.lineNumber() - firstLine in dataFlows.minus(flow).flatMap { f -> f.relevantLines } }
+                .map { Statement(it as Stmt, method) }
 
-        assertEquals(expectedConditions.toSet(), conditionsAsString,
-            "Actual path conditions do not match expected ones")
+            val conditions = computeRefinedSimplifiedPathConditions(relevantStatements, foreignRelevantStmts)
+
+            val conditionsAsString = conditions
+                .map { it.condition.toString(WithContextFormat.ContextFree) }
+                .single()
+
+            assertEquals(flow.expectedCondition, conditionsAsString,
+                "Actual path conditions do not match expected ones")
+        }
     }
 
 
@@ -54,29 +63,33 @@ class PathConditionsTests : SootBasedTest() {
 
     @Test
     fun simpleBranchingTest1() = test(
-        setOf(2),
-        setOf("\$param0 > 0L && 5L > \$param0"),
+        setOf(
+            DataFlow(setOf(2), "\$param0 > 0L && 5L > \$param0")
+        ),
         ::simpleBranching
     )
 
     @Test
     fun simpleBranchingTest2() = test(
-        setOf(4),
-        setOf("\$param0 >= 5L"), // implies "$param0 > 0"
+        setOf(
+            DataFlow(setOf(4), "\$param0 >= 5L") // implies "$param0 > 0"
+        ),
         ::simpleBranching
     )
 
     @Test
     fun simpleBranchingTest3() = test(
-        setOf(7),
-        setOf("\$param0 <= 0L"),
+        setOf(
+            DataFlow(setOf(7), "\$param0 <= 0L")
+        ),
         ::simpleBranching
     )
 
     @Test
     fun simpleBranchingTest4() = test(
-        setOf(4, 7),
-        setOf("false"),
+        setOf(
+            DataFlow(setOf(4, 7), "false")
+        ),
         ::simpleBranching
     )
 
@@ -91,16 +104,11 @@ class PathConditionsTests : SootBasedTest() {
     }
 
     @Test
-    fun multiAssignmentTest1() = test(
-        setOf(3, 5),
-        setOf("Math.random() < 0.5"),
-        ::multiAssignment
-    )
-
-    @Test
-    fun multiAssignmentTest2() = test(
-        setOf(0, 5),
-        setOf("Math.random() >= 0.5"),
+    fun multiAssignmentTest() = test(
+        setOf(
+            DataFlow(setOf(3, 5), "Math.random() < 0.5"),
+            DataFlow(setOf(0, 5), "0.5 <= Math.random()")
+        ),
         ::multiAssignment
     )
 }

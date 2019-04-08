@@ -1,18 +1,16 @@
 package crypto.analysis.errors;
 
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import boomerang.jimple.Statement;
 import boomerang.jimple.Val;
 import crypto.analysis.IAnalysisSeed;
 import crypto.pathconditions.PathConditionResult;
-import crypto.pathconditions.expressions.WithContextFormat;
 import crypto.rules.CryptSLRule;
 import kotlin.Lazy;
 import kotlin.LazyKt;
 import sync.pds.solver.nodes.Node;
+
+import java.util.HashSet;
+import java.util.Set;
 
 import static crypto.pathconditions.AnalysisEntryPointKt.computeRefinedSimplifiedPathConditions;
 
@@ -25,7 +23,7 @@ public abstract class ErrorWithObjectAllocation extends AbstractError {
 		this.objectAllocationLocation = objectAllocationLocation;
 		this.pathConditions = LazyKt.lazy(() -> {
 			Iterable<Statement> relevantStatements = getDataFlowPath().stream().map(Node::stmt)::iterator;
-			return computeRefinedSimplifiedPathConditions(relevantStatements);
+			return computeRefinedSimplifiedPathConditions(relevantStatements, new HashSet<>() /* TODO: foreignRelevantStatements */);
 		});
 	}
 

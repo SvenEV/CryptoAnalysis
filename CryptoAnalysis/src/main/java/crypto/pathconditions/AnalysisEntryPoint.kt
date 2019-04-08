@@ -17,11 +17,11 @@ import soot.Transform
 
 fun solve(query: PathConditionsQuery): Set<PathConditionResult> {
     val relevantStatements = extractRelevantStatements(query)
-    return computeRefinedSimplifiedPathConditions(relevantStatements)
+    return computeRefinedSimplifiedPathConditions(relevantStatements, emptySet() /* TODO: foreignRelevantStatements */)
 }
 
-fun computeRefinedSimplifiedPathConditions(relevantStatements: Iterable<Statement>) =
-    computePathConditions(relevantStatements)
+fun computeRefinedSimplifiedPathConditions(relevantStatements: Iterable<Statement>, foreignRelevantStatements: Iterable<Statement>) =
+    computePathConditions(relevantStatements, foreignRelevantStatements)
         .map { PathConditionResult(it.method, simplifyTerm(refine(it.condition))) }
         .filter { it.condition !is JTrue } // ignore TRUE conditions
         .toSet()
