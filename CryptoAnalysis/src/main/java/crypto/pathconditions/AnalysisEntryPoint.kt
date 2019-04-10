@@ -20,7 +20,7 @@ fun solve(query: PathConditionsQuery): Set<PathConditionResult> {
     return computeRefinedSimplifiedPathConditions(relevantStatements, emptySet() /* TODO: foreignRelevantStatements */)
 }
 
-fun computeRefinedSimplifiedPathConditions(relevantStatements: Iterable<Statement>, foreignRelevantStatements: Iterable<Statement>) =
+fun computeRefinedSimplifiedPathConditions(relevantStatements: Set<Statement>, foreignRelevantStatements: Set<Statement>) =
     computePathConditions(relevantStatements, foreignRelevantStatements)
         .map { PathConditionResult(it.method, simplifyTerm(refine(it.condition))) }
         .filter { it.condition !is JTrue } // ignore TRUE conditions

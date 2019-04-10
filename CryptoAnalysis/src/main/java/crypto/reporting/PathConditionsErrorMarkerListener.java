@@ -22,9 +22,12 @@ public class PathConditionsErrorMarkerListener extends ErrorMarkerListener {
 			// If one of the path conditions is 'false', we have a false positive and the error can be ignored
 			// TODO: Does this really prove false-positiveness in every case?
 			ErrorWithObjectAllocation errorWithObjectAllocation = (ErrorWithObjectAllocation) error;
-			boolean hasFalseCondition = errorWithObjectAllocation.getPathConditions().stream()
-					.anyMatch(o -> o.getCondition().equals(JFalse.INSTANCE));
-			return !hasFalseCondition;
+			// boolean hasFalseCondition = errorWithObjectAllocation.getPathConditions().stream()
+			// 		.anyMatch(o -> o.getCondition().equals(JFalse.INSTANCE));
+			// return !hasFalseCondition;
+
+			// TODO: Re-implement false-positive filtering somewhere else
+			return true;
 		}
 		return true;
 	}

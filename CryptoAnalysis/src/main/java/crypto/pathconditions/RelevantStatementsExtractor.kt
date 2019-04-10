@@ -184,7 +184,7 @@ private fun boomerangQuery(query: PathConditionsQuery): BackwardBoomerangResults
 fun extractRelevantStatements(
     backwardQueryResults: BackwardBoomerangResults<Weight.NoWeight>,
     query: PathConditionsQuery
-): ArrayList<Statement> {
+): Set<Statement> {
     val callAutomaton = backwardQueryResults.queryToSolvers().asIterable()
         .firstOrNull { it.key is ForwardQuery && query.checkAllocationSite(it.key.stmt()) }
         ?.value?.callAutomaton
@@ -192,10 +192,10 @@ fun extractRelevantStatements(
     if (callAutomaton == null)
         throw Exception("Could not find an allocation site of interest for variable '${query.variable}'")
 
-    return walkAutomaton(callAutomaton, Val(query.variable, query.method))
+    return walkAutomaton(callAutomaton, Val(query.variable, query.method)).toSet()
 }
 
-fun extractRelevantStatements(query: PathConditionsQuery): ArrayList<Statement> {
+fun extractRelevantStatements(query: PathConditionsQuery): Set<Statement> {
     val boomerangResults = boomerangQuery(query)
     val relevantStatements = extractRelevantStatements(boomerangResults, query)
     return relevantStatements

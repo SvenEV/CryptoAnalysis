@@ -18,7 +18,7 @@ class RefinementAndSimplificationTests : SootBasedTest() {
      */
     fun test(testMethod: KFunction<Boolean>, expectedResult: String) {
         // Find the query variable and statement
-        val method = klass.methods.single { it.name == testMethod.name }
+        val method = thisClass.methods.single { it.name == testMethod.name }
         Scene.v().entryPoints.add(method)
 
         println()

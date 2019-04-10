@@ -19,8 +19,8 @@ class PathConditionsTests : SootBasedTest() {
      * @param expectedConditions Expected conditions as Strings
      * @param testMethod The method to be analyzed
      */
-    fun test(dataFlows: Set<DataFlow>, testMethod: KFunction<kotlin.Unit>) {
-        val method = klass.methods.single { it.name == testMethod.name }
+    fun test(testMethod: KFunction<Unit>, vararg dataFlows: DataFlow) {
+        val method = thisClass.methods.single { it.name == testMethod.name }
         val units = method.retrieveActiveBody().units
 
         val firstLine = units
@@ -28,20 +28,26 @@ class PathConditionsTests : SootBasedTest() {
             .first { it >= 0 }
 
         dataFlows.forEach { flow ->
-
             val relevantStatements = units
                 .filter { it.lineNumber() - firstLine in flow.relevantLines }
                 .map { Statement(it as Stmt, method) }
+                .toSet()
 
             val foreignRelevantStmts = units
-                .filter { it.lineNumber() - firstLine in dataFlows.minus(flow).flatMap { f -> f.relevantLines } }
+                .filter {
+                    it.lineNumber() - firstLine in dataFlows
+                        .asSequence()
+                        .minus(flow)
+                        .flatMap { f -> f.relevantLines.asSequence() }
+                }
                 .map { Statement(it as Stmt, method) }
+                .toSet()
 
             val conditions = computeRefinedSimplifiedPathConditions(relevantStatements, foreignRelevantStmts)
 
             val conditionsAsString = conditions
                 .map { it.condition.toString(WithContextFormat.ContextFree) }
-                .single()
+                .singleOrNull() ?: "true"
 
             assertEquals(flow.expectedCondition, conditionsAsString,
                 "Actual path conditions do not match expected ones")
@@ -63,52 +69,95 @@ class PathConditionsTests : SootBasedTest() {
 
     @Test
     fun simpleBranchingTest1() = test(
-        setOf(
-            DataFlow(setOf(2), "\$param0 > 0L && 5L > \$param0")
-        ),
-        ::simpleBranching
+        ::simpleBranching,
+        DataFlow(setOf(2), "\$param0 > 0L && 5L > \$param0")
     )
 
     @Test
     fun simpleBranchingTest2() = test(
-        setOf(
-            DataFlow(setOf(4), "\$param0 >= 5L") // implies "$param0 > 0"
-        ),
-        ::simpleBranching
+        ::simpleBranching,
+        DataFlow(setOf(4), "\$param0 >= 5L") // implies "$param0 > 0"
     )
 
     @Test
     fun simpleBranchingTest3() = test(
-        setOf(
-            DataFlow(setOf(7), "\$param0 <= 0L")
-        ),
-        ::simpleBranching
+        ::simpleBranching,
+        DataFlow(setOf(7), "\$param0 <= 0L")
     )
 
     @Test
     fun simpleBranchingTest4() = test(
-        setOf(
-            DataFlow(setOf(4, 7), "false")
-        ),
-        ::simpleBranching
+        ::simpleBranching,
+        DataFlow(setOf(4, 7), "false")
     )
 
-
-    private fun multiAssignment() {
-        var x = "asdf"
-
+    private fun singleFlow1() {
+        val x = "A"
+        var y = "B"
         if (Math.random() < .5)
-            x = "no"
-
-        val c = Cipher.getInstance(x)
+            y = x
+        Cipher.getInstance(x)
     }
 
     @Test
-    fun multiAssignmentTest() = test(
-        setOf(
-            DataFlow(setOf(3, 5), "Math.random() < 0.5"),
-            DataFlow(setOf(0, 5), "0.5 <= Math.random()")
-        ),
-        ::multiAssignment
+    fun singleFlow1Test() = test(
+        ::singleFlow1,
+        DataFlow(setOf(0, 4), "true")
+    )
+
+    private fun singleFlow2() {
+        var x = "A"
+        x = "B"
+        Cipher.getInstance(x)
+    }
+
+    @Test
+    fun singleFlow2Test() = test(
+        ::singleFlow2,
+        DataFlow(setOf(1, 2), "true")
+    )
+
+    private fun multiFlow1() {
+        var x = "asdf"
+        if (Math.random() < .5)
+            x = "no"
+        Cipher.getInstance(x)
+    }
+
+    @Test
+    fun multiFlow1Test() = test(
+        ::multiFlow1,
+        DataFlow(setOf(2, 3), "Math.random() < 0.5"),
+        DataFlow(setOf(0, 3), "0.5 <= Math.random()")
+    )
+
+    private fun multiFlow2() {
+        val x = "A"
+        var y = "B"
+        if (Math.random() < .5)
+            y = x
+        Cipher.getInstance(y)
+    }
+
+    @Test
+    fun multiFlow2Test() = test(
+        ::multiFlow2,
+        DataFlow(setOf(0, 3, 4), "Math.random() < 0.5"),
+        DataFlow(setOf(1, 4), "0.5 <= Math.random()")
+    )
+
+    private fun multiFlow3() {
+        val x = "A"
+        var y = x
+        if (Math.random() < .5)
+            y = "AES"
+        Cipher.getInstance(y)
+    }
+
+    @Test
+    fun multiFlow3Test() = test(
+        ::multiFlow3,
+        DataFlow(setOf(0, 1, 4), "0.5 <= Math.random()"),
+        DataFlow(setOf(1, 3, 4), "Math.random() < 0.5")
     )
 }

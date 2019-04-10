@@ -170,13 +170,13 @@ fun simplifyTerm(term: JExpression): JExpression {
 
 data class PathConditionResult(val method: SootMethod, val condition: JExpression)
 
-fun computePathConditions(relevantStatements: Iterable<Statement>, foreignRelevantStatements: Iterable<Statement>) = relevantStatements
+fun computePathConditions(relevantStatements: Set<Statement>, foreignRelevantStatements: Set<Statement>) = relevantStatements
     .asSequence()
     .distinct()
     .groupBy { it.method }
     .map { (method, relevantStmts) ->
         val cfg = ExceptionalUnitGraph(method.activeBody)
-        val result = PathConditionsAnalysis(cfg, method, relevantStatements.toSet(), foreignRelevantStatements.toSet())
+        val result = PathConditionsAnalysis(cfg, method, relevantStatements, foreignRelevantStatements)
         val methodCondition = relevantStmts
             .map { result.getFlowBefore(it.unit.get()).content.condition }
             .filter { it != JTrue } // ignore relevant statements that are reached unconditionally

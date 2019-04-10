@@ -53,7 +53,6 @@ fun setupSoot(mainClass: String? = null) {
     if (mainClass != null) {
         val klass = Scene.v().forceResolve(mainClass, SootClass.BODIES)
         klass.setApplicationClass()
-        klass.methods.forEach(::println)
     }
 }
 
@@ -63,10 +62,16 @@ fun Unit.lineNumber() =
 fun nop() {}
 
 abstract class SootBasedTest {
-    protected val klass: SootClass
+    val thisClass: SootClass
+        get() {
+            val klass = Scene.v().forceResolve(javaClass.name, SootClass.BODIES)
+            klass.setApplicationClass()
+            return klass
+        }
 
-    init {
-        setupSoot(this.javaClass.name)
-        klass = Scene.v().loadClass(this.javaClass.name, SootClass.BODIES)
+    companion object {
+        init {
+            setupSoot()
+        }
     }
 }
