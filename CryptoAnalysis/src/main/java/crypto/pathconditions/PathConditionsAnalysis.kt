@@ -115,7 +115,7 @@ private class PathConditionsAnalysis(
         branchOuts: List<PathConditionBox>?
     ) = when (stmt) {
         is IfStmt -> {
-            val condition = parseJimpleExpression(ValueWithContext(stmt.condition, stmt, method), ForceBool)
+            val condition = parseJimpleExpression(stmt.condition, ProgramContext(stmt, method), ForceBool)
             val trueCondition = and(input.content.condition, condition)
             val falseCondition = and(input.content.condition, not(condition))
 

@@ -1,7 +1,7 @@
 package crypto.pathconditions.debug
 
 import boomerang.jimple.*
-import crypto.pathconditions.refinement.refineUnitToString
+import crypto.pathconditions.refinement.refineStatementToString
 import soot.*
 import soot.Unit
 import soot.jimple.*
@@ -67,5 +67,5 @@ fun Statement.prettyPrint(replacements: Map<JimpleLocal, Value> = emptyMap()) = 
 
 fun Statement.prettyPrintRefined() = when {
     method == null || !unit.isPresent -> ""
-    else -> "${method.declaringClass.name}.${method.name} { " + refineUnitToString(unit.get(), method) + "; } ↻"
+    else -> "${method.declaringClass.name}.${method.name} { " + refineStatementToString(unit.get(), method) + "; } ↻"
 }

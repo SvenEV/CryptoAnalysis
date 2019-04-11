@@ -117,14 +117,14 @@ private fun Z3Solver.encodeType(t: Type) = when {
  * @return A constant expression of the existing or newly created symbol
  */
 private fun Z3Solver.getOrCreateSymbol(v: JExpression, sort: Sort): Expr {
-    val symbol = symbols.computeIfAbsent(v) { context.mkSymbol(it.toString(WithContextFormat.Default)) }
+    val symbol = symbols.computeIfAbsent(v) { context.mkSymbol(it.toString(ContextFormat.Default)) }
     return context.mkConst(symbol, sort)
 }
 
 private fun Z3Solver.tryEncodeWellKnownCall(expr: JVirtualInvoke): Expr? = when {
     expr.method.toString() == "<java.lang.String: boolean equals(java.lang.Object)>" -> {
-        val base = (expr.base as? JConstant)?.v?.value as? StringConstant
-        val other = (expr.args.elementAtOrNull(0) as? JConstant)?.v?.value as? StringConstant
+        val base = (expr.base as? JConstant)?.value as? StringConstant
+        val other = (expr.args.elementAtOrNull(0) as? JConstant)?.value as? StringConstant
         when {
             base != null && other != null -> if (base.value == other.value) trueExpr else falseExpr
             else -> null
@@ -135,8 +135,8 @@ private fun Z3Solver.tryEncodeWellKnownCall(expr: JVirtualInvoke): Expr? = when 
 
 private fun Z3Solver.tryEncodeWellKnownStaticCall(expr: JStaticInvoke): Expr? = when {
     expr.method.toString() == "<kotlin.jvm.internal.Intrinsics: boolean areEqual(java.lang.Object,java.lang.Object)>" -> {
-        val op1 = (expr.args.elementAtOrNull(0) as? JConstant)?.v?.value as? StringConstant
-        val op2 = (expr.args.elementAtOrNull(0) as? JConstant)?.v?.value as? StringConstant
+        val op1 = (expr.args.elementAtOrNull(0) as? JConstant)?.value as? StringConstant
+        val op2 = (expr.args.elementAtOrNull(0) as? JConstant)?.value as? StringConstant
         when {
             op1 != null && op2 != null -> if (op1.value == op2.value) trueExpr else falseExpr
             else -> null
@@ -233,7 +233,7 @@ fun Z3Solver.encode(expr: JExpression, expectedSort: Sort): Expr =
                 // Example: parseJimpleExpression('$i0 == 0') --> since we can't know that $i0 is really a Bool here,
                 // '0' is parsed as an integer constant. During refinement, however, inlining of '$i0' might reveal that
                 // it's a Bool variable, hence the integer constant must be interpreted as a Bool as well.
-                val const = expr.v.value
+                val const = expr.value
                 when (const) {
                     is IntConstant -> when (expectedSort) {
                         context.intSort -> context.mkInt(const.value)
@@ -245,7 +245,7 @@ fun Z3Solver.encode(expr: JExpression, expectedSort: Sort): Expr =
                     is FloatConstant -> context.mkFP(const.value, floatSort)
                     is DoubleConstant -> context.mkFP(const.value, floatSort)
                     is StringConstant -> context.mkString(const.value)
-                    else -> TODO("Missing case for ${expr.v.value.javaClass.name}")
+                    else -> TODO("Missing case for ${expr.value.javaClass.name}")
                 }
             }
             is JLocal -> getOrCreateSymbol(expr, expectedSort)
@@ -302,13 +302,13 @@ private fun Z3Solver.intToBool(v: Int) = when (v) {
 private fun Z3Solver.decodeValue(expr: Expr): JExpression = when {
     expr.isIntNum ->
         // TODO: Choose int or long on Z3-decode?
-        //JConstant(WithContext(IntConstant.v(Integer.parseInt(expr.toString())), null, null))
-        JConstant(WithContext(LongConstant.v(expr.toString().toLong()), null, null))
+        //JConstant(IntConstant.v(Integer.parseInt(expr.toString())))
+        JConstant(LongConstant.v(expr.toString().toLong()))
     expr.isFloatNum -> {
         val v = constructDouble(expr as FPNum)
-        JConstant(WithContext(DoubleConstant.v(v), null, null))
+        JConstant(DoubleConstant.v(v))
     }
-    expr.isString -> JConstant(WithContext(StringConstant.v(expr.string), null, null))
+    expr.isString -> JConstant(StringConstant.v(expr.string))
     expr.isBool && expr.toString() == "true" -> JTrue
     expr.isBool && expr.toString() == "false" -> JFalse
     expr.isConst && expr.toString() == "null" -> JNull

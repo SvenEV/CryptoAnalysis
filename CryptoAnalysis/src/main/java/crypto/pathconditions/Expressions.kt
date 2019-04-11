@@ -3,7 +3,6 @@ package crypto.pathconditions.expressions
 import crypto.pathconditions.debug.prettyPrint
 import crypto.pathconditions.ofType
 import soot.*
-import soot.Unit
 import soot.jimple.*
 import soot.jimple.internal.JLengthExpr
 
@@ -19,45 +18,34 @@ import soot.jimple.internal.JLengthExpr
 //
 
 /**
- * A Jimple 'Value' enriched with containing statement and method
+ * A pair of [Stmt] and [SootMethod]. Similar to [boomerang.jimple.Statement], but with different string formatting.
  */
-typealias ValueWithContext = WithContext<Value>
+data class ProgramContext(val unit: Stmt, val method: SootMethod) {
+    override fun toString() = toString(ContextFormat.Default)
 
-data class WithContext<T : Value>(val value: T, val unit: Unit?, val method: SootMethod?) {
-    override fun equals(other: Any?) = other?.javaClass == javaClass &&
-        other is WithContext<*> &&
-        other.value.equivTo(value) &&
-        other.unit == unit &&
-        other.method == method
-
-    override fun hashCode(): Int {
-        var result = value.hashCode()
-        result = 31 * result + (unit?.hashCode() ?: 0)
-        result = 31 * result + (method?.hashCode() ?: 0)
-        return result
+    fun toString(format: ContextFormat) = when (format) {
+        ContextFormat.Default ->
+            method.name + ":" +
+            method.activeBody?.units?.indexOf(unit)
+        ContextFormat.Multiline ->
+            method.name + ":" +
+            method.activeBody?.units?.indexOf(unit)
+        ContextFormat.ContextFree -> ""
     }
 
-    override fun toString() = prettyPrint(WithContextFormat.Default)
-
-    fun prettyPrint(format: WithContextFormat) = when (format) {
-        WithContextFormat.Default ->
-            value.toString() + "-@-" +
-                method?.name + ":" +
-                method?.activeBody?.units?.indexOf(unit!!)
-        WithContextFormat.Multiline ->
-            value.toString() + "\n" +
-                method?.name + ":" +
-                method?.activeBody?.units?.indexOf(unit!!)
-        WithContextFormat.ContextFree ->
-            value.toString()
+    fun suffixString(format: ContextFormat) = when (format) {
+        ContextFormat.Default -> "-@-" + toString(format)
+        ContextFormat.Multiline -> "\n" + toString(format)
+        ContextFormat.ContextFree -> ""
     }
 }
 
 /**
- * Options of how to format a [WithContext] as String.
+ * Options of how to format [ProgramContext] as String.
+ * TODO: To be 100% correct, we should include package name and class name since method name alone is not unique
  */
-enum class WithContextFormat {
-    Default, // 'x @ methodName:12'
+enum class ContextFormat {
+    Default, // 'x-@-methodName:12'
     Multiline, // 'x\nmethodName:12'
     ContextFree // 'x'
 }
@@ -68,10 +56,10 @@ private fun validateBool(t: Type) {
 }
 
 sealed class JExpression {
-    override fun toString() = toString(WithContextFormat.Default)
+    override fun toString() = toString(ContextFormat.Default)
 
     // For Java interop:
-    fun prettyPrint(format: WithContextFormat) = toString(format)
+    fun prettyPrint(format: ContextFormat) = toString(format)
 
     fun getType() = type
 }
@@ -83,16 +71,16 @@ object JFalse : JExpression()
 
 object JNull : JExpression()
 
-data class JConstant(val v: WithContext<Constant>) : JExpression() {
+data class JConstant(val value: Constant) : JExpression() {
     init {
-        if (v.value is NullConstant) throw IllegalArgumentException("Use JNull instead")
+        if (value is NullConstant) throw IllegalArgumentException("Use JNull instead")
     }
 
     override fun toString() = super.toString()
 }
 
 // LOCAL
-data class JLocal(val v: WithContext<Local>, val actualType: Type) : JExpression() {
+data class JLocal(val local: Local, val context: ProgramContext, val actualType: Type) : JExpression() {
     override fun toString() = super.toString()
 }
 
@@ -115,41 +103,49 @@ data class JConditional(val condition: JExpression, val trueExpr: JExpression, v
 }
 
 // INVOKEEXPRS
-data class JVirtualInvoke(val base: JExpression, val method: SootMethod, val args: List<JExpression>) :
+data class JVirtualInvoke(val base: JExpression, val method: SootMethod, val args: List<JExpression>, val context: ProgramContext) :
     JExpression() {
+    // Note: We must assume method indeterminism, hence method calls must carry context
     override fun toString() = super.toString()
 }
 
-data class JSpecialInvoke(val base: JExpression, val method: SootMethod, val args: List<JExpression>) :
+data class JSpecialInvoke(val base: JExpression, val method: SootMethod, val args: List<JExpression>, val context: ProgramContext) :
     JExpression() {
+    // Note: We must assume method indeterminism, hence method calls must carry context
     override fun toString() = super.toString()
 }
 
-data class JInterfaceInvoke(val base: JExpression, val method: SootMethod, val args: List<JExpression>) :
+data class JInterfaceInvoke(val base: JExpression, val method: SootMethod, val args: List<JExpression>, val context: ProgramContext) :
     JExpression() {
+    // Note: We must assume method indeterminism, hence method calls must carry context
     override fun toString() = super.toString()
 }
 
-data class JStaticInvoke(val method: SootMethod, val args: List<JExpression>) :
+data class JStaticInvoke(val method: SootMethod, val args: List<JExpression>, val context: ProgramContext) :
     JExpression() {
+    // Note: We must assume method indeterminism, hence method calls must carry context
     override fun toString() = super.toString()
 }
 
-data class JDynamicInvoke(val method: SootMethod, val args: List<JExpression>) :
+data class JDynamicInvoke(val method: SootMethod, val args: List<JExpression>, val context: ProgramContext) :
     JExpression() {
+    // Note: We must assume method indeterminism, hence method calls must carry context
     override fun toString() = super.toString()
 }
 
-data class JNew(val args: List<JExpression>, val baseType: Type) : JExpression() {
+data class JNew(val args: List<JExpression>, val baseType: Type, val context: ProgramContext) : JExpression() {
     override fun toString() = super.toString()
 }
 
 // REF
 data class JInstanceFieldRef(val base: JExpression, val field: SootField) : JExpression() {
+    // Note: No context needed - given the exact same base (probably carrying context), field access is deterministic
+    // (under the assumption that no other thread modifies the same object)
     override fun toString() = super.toString()
 }
 
-data class JStaticFieldRef(val field: SootField) : JExpression() {
+data class JStaticFieldRef(val field: SootField, val context: ProgramContext) : JExpression() {
+    // Note: Static field refs require context because they may have different values at different statements (similar to JLocal)
     override fun toString() = super.toString()
 }
 
@@ -298,8 +294,8 @@ fun or(left: JExpression, right: JExpression): JExpression = when {
 fun harmonizeIntBool(left: JExpression, right: JExpression): Pair<JExpression, JExpression> {
     val leftIsBool = left.type == BooleanType.v()
     val rightIsBool = right.type == BooleanType.v()
-    val leftAsInt = (left as? JConstant)?.v?.value as? IntConstant
-    val rightAsInt = (right as? JConstant)?.v?.value as? IntConstant
+    val leftAsInt = (left as? JConstant)?.value as? IntConstant
+    val rightAsInt = (right as? JConstant)?.value as? IntConstant
     return when {
         leftIsBool && rightAsInt != null -> left to intToBool(rightAsInt.value)
         rightIsBool && leftAsInt != null -> intToBool(leftAsInt.value) to right
@@ -340,71 +336,75 @@ fun intToBool(i: Int) = when (i) {
 /**
  * Turns a Jimple 'Value' into an instance of our custom expression tree model.
  */
-fun parseJimpleExpression(expr: ValueWithContext, typeHint: TypeHint): JExpression {
+fun parseJimpleExpression(expr: Value, context: ProgramContext, typeHint: TypeHint): JExpression {
     try {
-        val v = expr.value
-        return when (v) {
+        return when (expr) {
             is IntConstant -> when (typeHint) {
-                NoTypeHint -> JConstant(WithContext(v, expr.unit, expr.method))
-                ForceBool -> intToBool(v.value)
+                NoTypeHint -> JConstant(expr)
+                ForceBool -> intToBool(expr.value)
             }
 
             is NullConstant -> JNull
 
-            is Constant -> JConstant(WithContext(v, expr.unit, expr.method))
+            is Constant -> JConstant(expr)
 
-            is CastExpr -> JCast(parseJimpleExpression(expr.copy(value = v.op), NoTypeHint), v.castType)
-            is InstanceOfExpr -> JInstanceOf(parseJimpleExpression(expr.copy(value = v.op), NoTypeHint), v.checkType)
-            is Local -> JLocal(WithContext(v, expr.unit, expr.method), when (typeHint) {
+            is CastExpr -> JCast(parseJimpleExpression(expr.op, context, NoTypeHint), expr.castType)
+            is InstanceOfExpr -> JInstanceOf(parseJimpleExpression(expr.op, context, NoTypeHint), expr.checkType)
+            is Local -> JLocal(expr, context, when (typeHint) {
                 is ForceBool -> BooleanType.v()
-                is NoTypeHint -> v.type
+                is NoTypeHint -> expr.type
             })
 
-            is InstanceFieldRef -> JInstanceFieldRef(parseJimpleExpression(expr.copy(value = v.base), NoTypeHint), v.field)
-            is StaticFieldRef -> JStaticFieldRef(v.field)
+            is InstanceFieldRef -> JInstanceFieldRef(parseJimpleExpression(expr.base, context, NoTypeHint), expr.field)
+            is StaticFieldRef -> JStaticFieldRef(expr.field, context)
 
             is VirtualInvokeExpr -> JVirtualInvoke(
-                parseJimpleExpression(expr.copy(value = v.base), NoTypeHint),
-                v.method,
-                v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
+                parseJimpleExpression(expr.base, context, NoTypeHint),
+                expr.method,
+                expr.args.map { parseJimpleExpression(it, context, NoTypeHint) },
+                context)
 
             is SpecialInvokeExpr -> JSpecialInvoke(
-                parseJimpleExpression(expr.copy(value = v.base), NoTypeHint),
-                v.method,
-                v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
+                parseJimpleExpression(expr.base, context, NoTypeHint),
+                expr.method,
+                expr.args.map { parseJimpleExpression(it, context, NoTypeHint) },
+                context)
 
             is InterfaceInvokeExpr -> JInterfaceInvoke(
-                parseJimpleExpression(expr.copy(value = v.base), NoTypeHint),
-                v.method,
-                v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
+                parseJimpleExpression(expr.base, context, NoTypeHint),
+                expr.method,
+                expr.args.map { parseJimpleExpression(it, context, NoTypeHint) },
+                context)
 
             is StaticInvokeExpr -> JStaticInvoke(
-                v.method,
-                v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
+                expr.method,
+                expr.args.map { parseJimpleExpression(it, context, NoTypeHint) },
+                context)
 
             is DynamicInvokeExpr -> JDynamicInvoke(
-                v.method,
-                v.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) })
+                expr.method,
+                expr.args.map { parseJimpleExpression(it, context, NoTypeHint) },
+                context)
 
             is NewExpr -> {
                 // Find constructor call statement to get constructor arguments
-                val targetVariable = (expr.unit as AssignStmt).leftOp
-                val constructorCall = expr.method!!.activeBody.units
+                val targetVariable = (context.unit as AssignStmt).leftOp
+                val constructorCall = context.method.activeBody.units
                     .ofType<InvokeStmt>()
                     .single { it.invokeExpr is SpecialInvokeExpr && it.invokeExpr.method.isConstructor && (it.invokeExpr as SpecialInvokeExpr).base == targetVariable }
                 JNew(
-                    constructorCall.invokeExpr.args.map { parseJimpleExpression(expr.copy(value = it), NoTypeHint) },
-                    v.baseType
-                )
+                    constructorCall.invokeExpr.args.map { parseJimpleExpression(it, context, NoTypeHint) },
+                    expr.baseType,
+                    context)
             }
 
-            is NegExpr -> JNot(parseJimpleExpression(expr.copy(value = v.op), ForceBool))
+            is NegExpr -> JNot(parseJimpleExpression(expr.op, context, ForceBool))
 
             is BinopExpr -> {
-                val typeHint = if (v.op1.type == BooleanType.v() || v.op2.type == BooleanType.v()) ForceBool else NoTypeHint
-                val op1 = parseJimpleExpression(expr.copy(value = v.op1), typeHint)
-                val op2 = parseJimpleExpression(expr.copy(value = v.op2), typeHint)
-                when (v) {
+                val typeHint = if (expr.op1.type == BooleanType.v() || expr.op2.type == BooleanType.v()) ForceBool else NoTypeHint
+                val op1 = parseJimpleExpression(expr.op1, context, typeHint)
+                val op2 = parseJimpleExpression(expr.op2, context, typeHint)
+                when (expr) {
                     is CmpExpr -> JCompare(op1, op2)
                     is CmpgExpr -> JCompareGreater(op1, op2)
                     is CmplExpr -> JCompareLess(op1, op2)
@@ -413,7 +413,7 @@ fun parseJimpleExpression(expr: ValueWithContext, typeHint: TypeHint): JExpressi
                     is MulExpr -> JMultiply(op1, op2)
                     is DivExpr -> JDivide(op1, op2)
                     is RemExpr -> JRemainder(op1, op2)
-                    is ConditionExpr -> condition(op1, op2, when (v) {
+                    is ConditionExpr -> condition(op1, op2, when (expr) {
                         is EqExpr -> JEquals
                         is NeExpr -> JNotEquals
                         is GtExpr -> JGreaterThan
@@ -422,19 +422,19 @@ fun parseJimpleExpression(expr: ValueWithContext, typeHint: TypeHint): JExpressi
                         is LeExpr -> JLessOrEqual
                         else -> TODO("Can't happen")
                     })
-                    else -> TODO("Parsing of Jimple '${v.javaClass.name}' (example: '${v.prettyPrint()}')")
+                    else -> TODO("Parsing of Jimple '${expr.javaClass.name}' (example: '${expr.prettyPrint()}')")
                 }
             }
 
             is JLengthExpr -> {
-                val op = parseJimpleExpression(expr.copy(value = v.op), NoTypeHint)
+                val op = parseJimpleExpression(expr.op, context, NoTypeHint)
                 JInstanceFieldRef(op, SootField("length", IntType.v()))
             }
 
-            is ThisRef -> JThisRef(v.type)
-            is ParameterRef -> JParameterRef(v.index, v.type)
+            is ThisRef -> JThisRef(expr.type)
+            is ParameterRef -> JParameterRef(expr.index, expr.type)
 
-            else -> TODO("Parsing of Jimple '${v.javaClass.name}' (example: '${v.prettyPrint()}')")
+            else -> TODO("Parsing of Jimple '${expr.javaClass.name}' (example: '${expr.prettyPrint()}')")
         }
     } catch (e: Exception) {
         throw Exception("Failed to parse Jimple expression '$expr'", e)
@@ -451,7 +451,7 @@ val JExpression.type
         JTrue -> BooleanType.v()
         JFalse -> BooleanType.v()
         JNull -> NullType.v()
-        is JConstant -> v.value.type
+        is JConstant -> value.type
         is JLocal -> actualType
         is JCast -> castType
         is JInstanceOf -> BooleanType.v()
@@ -559,23 +559,23 @@ val JExpression.associativity
         is JCondition -> symbol.associativity
     }
 
-fun JExpression.toString(format: WithContextFormat): String = when (this) {
+fun JExpression.toString(format: ContextFormat): String = when (this) {
     JTrue -> "true"
     JFalse -> "false"
     JNull -> "null"
-    is JConstant -> v.value.prettyPrint()
-    is JLocal -> v.prettyPrint(format)
+    is JConstant -> value.prettyPrint()
+    is JLocal -> "${local.name}${context.suffixString(format)}"
     is JCast -> "(${castType.prettyPrint()}) ${expr.toString(format)}"
     is JInstanceOf -> "${childToString(expr, format)} instanceof ${checkType.prettyPrint()}"
     is JConditional -> "${childToString(condition, format)} ? ${childToString(trueExpr, format)} : ${childToString(falseExpr, format)}"
-    is JVirtualInvoke -> "${childToString(base, format, OpPos.Left)}.${method.name}(${args.joinToString { it.toString(format) }})"
-    is JSpecialInvoke -> "${childToString(base, format, OpPos.Left)}.${method.name}(${args.joinToString { it.toString(format) }})"
-    is JInterfaceInvoke -> "${childToString(base, format, OpPos.Left)}.${method.name}(${args.joinToString { it.toString(format) }})"
-    is JStaticInvoke -> "${method.declaringClass.type.prettyPrint()}.${method.name}(${args.joinToString { it.toString(format) }})"
-    is JDynamicInvoke -> "${method.declaringClass.type.prettyPrint()}.${method.name}(${args.joinToString { it.toString(format) }})"
-    is JNew -> "new ${baseType.prettyPrint()}(${args.joinToString { it.toString(format) }})"
+    is JVirtualInvoke -> "${childToString(base, format, OpPos.Left)}.${method.name}(${args.joinToString { it.toString(format) }})${context.suffixString(format)}"
+    is JSpecialInvoke -> "${childToString(base, format, OpPos.Left)}.${method.name}(${args.joinToString { it.toString(format) }})${context.suffixString(format)}"
+    is JInterfaceInvoke -> "${childToString(base, format, OpPos.Left)}.${method.name}(${args.joinToString { it.toString(format) }})${context.suffixString(format)}"
+    is JStaticInvoke -> "${method.declaringClass.type.prettyPrint()}.${method.name}(${args.joinToString { it.toString(format) }})${context.suffixString(format)}"
+    is JDynamicInvoke -> "${method.declaringClass.type.prettyPrint()}.${method.name}(${args.joinToString { it.toString(format) }})${context.suffixString(format)}"
+    is JNew -> "new ${baseType.prettyPrint()}(${args.joinToString { it.toString(format) }})${context.suffixString(format)}"
     is JInstanceFieldRef -> "${childToString(base, format, OpPos.Left)}.${field.name}"
-    is JStaticFieldRef -> "${field.declaringClass.type.prettyPrint()}.${field.name}"
+    is JStaticFieldRef -> "${field.declaringClass.type.prettyPrint()}.${field.name}${context.suffixString(format)}"
     is JThisRef -> "this"
     is JParameterRef -> "\$param$index" // TODO: Parameter names seem not to be preserved in Soot
     is JNot -> "!${childToString(op, format, OpPos.Right)}"
@@ -596,7 +596,7 @@ fun JExpression.toString(format: WithContextFormat): String = when (this) {
 enum class OpPos { Left, Right, NotApplicable }
 
 /** Surrounds an operand with parentheses if necessary */
-fun JExpression.childToString(child: JExpression, format: WithContextFormat, position: OpPos = OpPos.NotApplicable): String {
+fun JExpression.childToString(child: JExpression, format: ContextFormat, position: OpPos = OpPos.NotApplicable): String {
     val str = child.toString(format)
     fun strWithParens() = if (str.contains(" ")) "($str)" else str
 

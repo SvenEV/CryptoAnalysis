@@ -24,15 +24,15 @@ class RefinementAndSimplificationTests : SootBasedTest() {
         println()
         println("Method '${method.name}':")
         val returnStmt = method.retrieveActiveBody().units.ofType<ReturnStmt>().last()
-        val expression = parseJimpleExpression(ValueWithContext(returnStmt.op, returnStmt, method), NoTypeHint)
-        println("    Original:    ${expression.toString(WithContextFormat.ContextFree)}")
+        val expression = parseJimpleExpression(returnStmt.op, ProgramContext(returnStmt, method), NoTypeHint)
+        println("    Original:    ${expression.toString(ContextFormat.ContextFree)}")
         val refined = refine(expression)
-        println("    Refined:     ${refined.toString(WithContextFormat.ContextFree)}")
+        println("    Refined:     ${refined.toString(ContextFormat.ContextFree)}")
         val simplified = simplifyTerm(refined)
-        println("    Simplified:  ${simplified.toString(WithContextFormat.ContextFree)}")
+        println("    Simplified:  ${simplified.toString(ContextFormat.ContextFree)}")
 
         println("    Expected:    $expectedResult")
-        assertEquals(expectedResult, simplified.toString(WithContextFormat.ContextFree))
+        assertEquals(expectedResult, simplified.toString(ContextFormat.ContextFree))
     }
 
     private fun a(): Boolean {
@@ -70,7 +70,7 @@ class RefinementAndSimplificationTests : SootBasedTest() {
     }
 
     @Test
-    fun conditionalIntTest() = test(::conditionalInt, "(System.out == null ? 4 : -4) > 2")
+    fun conditionalIntTest() = test(::conditionalInt, "(System.out == null ? 4L : -4L) > 2L")
 
     private fun conditionalBool(): Boolean {
         val x = if (Math.random() < .5) false else true
@@ -80,7 +80,7 @@ class RefinementAndSimplificationTests : SootBasedTest() {
     @Test
     fun conditionalBoolTest() = test(::conditionalBool, "Math.random() >= 0.5")
 
-    fun stringOps(): Boolean {
+    private fun stringOps(): Boolean {
         val y = "a" + "b"
         return y == "ab"
     }

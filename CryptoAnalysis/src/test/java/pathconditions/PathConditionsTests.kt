@@ -2,7 +2,7 @@ package pathconditions
 
 import boomerang.jimple.Statement
 import crypto.pathconditions.computeRefinedSimplifiedPathConditions
-import crypto.pathconditions.expressions.WithContextFormat
+import crypto.pathconditions.expressions.ContextFormat
 import crypto.pathconditions.expressions.toString
 import org.junit.Test
 import soot.jimple.Stmt
@@ -46,7 +46,7 @@ class PathConditionsTests : SootBasedTest() {
             val conditions = computeRefinedSimplifiedPathConditions(relevantStatements, foreignRelevantStmts)
 
             val conditionsAsString = conditions
-                .map { it.condition.toString(WithContextFormat.ContextFree) }
+                .map { it.condition.toString(ContextFormat.ContextFree) }
                 .singleOrNull() ?: "true"
 
             assertEquals(flow.expectedCondition, conditionsAsString,
