@@ -7,6 +7,7 @@ import boomerang.solver.AbstractBoomerangSolver
 import soot.SootMethod
 import soot.Value
 import soot.jimple.Stmt
+import soot.tagkit.Tag
 import wpds.impl.Weight
 
 inline fun <reified U> Sequence<*>.ofType() =
@@ -29,3 +30,20 @@ data class PathConditionsQuery(
     val method: SootMethod,
     val checkAllocationSite: (Statement) -> Boolean
 )
+
+/** Provides names for the parameters of a [SootMethod] */
+data class MethodParameterInfo(val parameterNames: List<String>) : Tag {
+    override fun getValue() = parameterNames.joinToString().toByteArray()
+    override fun getName() = "MethodParameterInfo"
+}
+
+/**
+ * Reads parameter names from the tag of type [MethodParameterInfo].
+ * If no such tag is available, returns names of the form "$param0".
+ */
+val SootMethod.parameterNames
+    get() = tags
+        .ofType<MethodParameterInfo>()
+        .firstOrNull()
+        ?.parameterNames
+        ?: (0 until parameterCount).map { "\$param$it" }

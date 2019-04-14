@@ -2,6 +2,7 @@ package crypto.pathconditions.expressions
 
 import crypto.pathconditions.debug.prettyPrint
 import crypto.pathconditions.ofType
+import crypto.pathconditions.parameterNames
 import soot.*
 import soot.jimple.*
 import soot.jimple.internal.JLengthExpr
@@ -153,7 +154,7 @@ data class JThisRef(val thisType: Type) : JExpression() {
     override fun toString() = super.toString()
 }
 
-data class JParameterRef(val index: Int, val paramType: Type) : JExpression() {
+data class JParameterRef(val index: Int, val name: String, val paramType: Type) : JExpression() {
     override fun toString() = super.toString()
 }
 
@@ -432,8 +433,7 @@ fun parseJimpleExpression(expr: Value, context: ProgramContext, typeHint: TypeHi
             }
 
             is ThisRef -> JThisRef(expr.type)
-            is ParameterRef -> JParameterRef(expr.index, expr.type)
-
+            is ParameterRef -> JParameterRef(expr.index, context.method.parameterNames[expr.index], expr.type)
             else -> TODO("Parsing of Jimple '${expr.javaClass.name}' (example: '${expr.prettyPrint()}')")
         }
     } catch (e: Exception) {
@@ -577,7 +577,7 @@ fun JExpression.toString(format: ContextFormat): String = when (this) {
     is JInstanceFieldRef -> "${childToString(base, format, OpPos.Left)}.${field.name}"
     is JStaticFieldRef -> "${field.declaringClass.type.prettyPrint()}.${field.name}${context.suffixString(format)}"
     is JThisRef -> "this"
-    is JParameterRef -> "\$param$index" // TODO: Parameter names seem not to be preserved in Soot
+    is JParameterRef -> name // TODO: Parameter names seem not to be preserved in Soot
     is JNot -> "!${childToString(op, format, OpPos.Right)}"
     is JCompare -> "${childToString(left, format)} cmp ${childToString(right, format)}"
     is JCompareGreater -> "${childToString(left, format)} cmpg ${childToString(right, format)}"
