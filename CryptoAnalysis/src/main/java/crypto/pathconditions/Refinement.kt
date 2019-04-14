@@ -141,6 +141,12 @@ fun refine(expr: JExpression): JExpression =
                         condition(refine(cmpg.left), refine(cmpg.right), refined.symbol)
                     }
 
+                    // Turn '<constant> == null' into 'false' ('!= null' into 'true')
+                    refined.left is JNull && refined.right is JConstant && refined.symbol is JEquals -> JFalse
+                    refined.left is JNull && refined.right is JConstant && refined.symbol is JNotEquals -> JTrue
+                    refined.right is JNull && refined.left is JConstant && refined.symbol is JEquals -> JFalse
+                    refined.right is JNull && refined.left is JConstant && refined.symbol is JNotEquals -> JTrue
+
                     else -> refined
                 }
             }
