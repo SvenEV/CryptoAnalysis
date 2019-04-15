@@ -22,6 +22,16 @@ fun SootMethod.prettyPrint(): String {
         .joinToString(System.lineSeparator())
 }
 
+fun SootClass.prettyPrint(): String {
+    val sw = StringWriter()
+    val pw = PrintWriter(sw)
+    Printer.v().printTo(this, pw)
+    return sw.buffer.toString()
+        .lineSequence()
+        .filter(String::isNotEmpty)
+        .joinToString(System.lineSeparator())
+}
+
 fun Type.prettyPrint(): String =
     if (this is RefType && hasSootClass()) sootClass.shortName else toString()
 

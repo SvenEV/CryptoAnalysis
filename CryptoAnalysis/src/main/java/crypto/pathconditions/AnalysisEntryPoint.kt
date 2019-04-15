@@ -9,6 +9,7 @@ import crypto.pathconditions.refinement.refine
 import soot.PackManager
 import soot.SceneTransformer
 import soot.Transform
+import java.lang.Exception
 
 /**
  * A (temporary) entry point to perform all steps of the analysis
@@ -22,7 +23,13 @@ fun solve(query: PathConditionsQuery): Set<PathConditionResult> {
 
 fun computeRefinedSimplifiedPathConditions(relevantStatements: Set<Statement>, foreignRelevantStatements: Set<Statement>) =
     computePathConditions(relevantStatements, foreignRelevantStatements)
-        .map { PathConditionResult(it.method, simplifyTerm(refine(it.condition))) }
+        .map {
+            try {
+                it.copy(condition = simplifyTerm(refine(it.condition)))
+            } catch (ex: Exception) {
+                throw Exception("Failed to refine or simplify '${it.condition}' from method '${it.method.name}'.${System.lineSeparator()}${it.method.prettyPrint()}", ex)
+            }
+        }
         .filter { it.condition !is JTrue } // ignore TRUE conditions
         .toSet()
 
