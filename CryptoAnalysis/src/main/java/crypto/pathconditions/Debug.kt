@@ -42,6 +42,7 @@ fun Value.prettyPrint(replacements: Map<JimpleLocal, Value> = emptyMap()): Strin
     is InstanceInvokeExpr ->
         "${base.prettyPrint(replacements)}.${method.name}(${args.joinToString { it.prettyPrint(replacements) }})"
     is InstanceFieldRef -> "${base.prettyPrint(replacements)}.${field.name}"
+    is StaticFieldRef -> "${field.declaringClass.shortName}.${field.name}"
     is NewExpr -> "new ${type.prettyPrint()}"
     is CastExpr -> "(${castType.prettyPrint()}) ${op.prettyPrint(replacements)}"
     is BinopExpr -> {
@@ -63,6 +64,7 @@ fun Unit.prettyPrint(replacements: Map<JimpleLocal, Value> = emptyMap()): String
     is AssignStmt -> "${leftOp.prettyPrint(replacements)} = ${rightOp.prettyPrint(replacements)}"
     is InvokeStmt -> invokeExpr.prettyPrint(replacements)
     is IfStmt -> "if (${condition.prettyPrint(replacements)})"
+    is GotoStmt -> "goto `${target.prettyPrint(replacements)}`"
     else -> toString()
 }
 

@@ -206,21 +206,22 @@ private fun AbstractJimpleBasedICFG.getReconstructedSuccsOf(
 /**
  * Renders the control flow of a method as a graph in Graphviz DOT format.
  */
-fun AbstractJimpleBasedICFG.toDotString(method: SootMethod): String {
+fun AbstractJimpleBasedICFG.toDotString(method: SootMethod, reconstructJava: Boolean = false): String {
     val inlinedLocals = mutableMapOf<JimpleLocal, Value>()
 
-    fun buildGraph(stmt: soot.Unit, g: DirectedUnlabeledGraph<Unit>): DirectedUnlabeledGraph<Unit> {
-        val g = when (stmt) {
-            is IfStmt -> g.configureNode(stmt) {
+    fun buildGraph(stmt: soot.Unit, graph: DirectedUnlabeledGraph<Unit>): DirectedUnlabeledGraph<Unit> {
+        val newGraph = when (stmt) {
+            is IfStmt -> graph.configureNode(stmt) {
                 label(stmt.prettyPrint(inlinedLocals))
                 color("blue")
             }
-            else -> g.configureNode(stmt) {
+            else -> graph.configureNode(stmt) {
                 label(stmt.prettyPrint(inlinedLocals))
             }
         }
-        return getReconstructedSuccsOf(stmt, inlinedLocals)
-            .fold(g) { g, succ -> buildGraph(succ, g).addEdge(stmt to succ) }
+
+        val succs = if (reconstructJava) getReconstructedSuccsOf(stmt, inlinedLocals) else getSuccsOf(stmt).asSequence()
+        return succs.fold(newGraph) { g, succ -> buildGraph(succ, g).addEdge(stmt to succ) }
     }
 
     val graph = getStartPointsOf(method).fold(DirectedGraph.emptyUnlabeled<Unit>()) { g, stmt -> buildGraph(stmt, g) }
