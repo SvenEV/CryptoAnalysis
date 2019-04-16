@@ -34,6 +34,9 @@ class EdgeConfiguration {
     fun label(s: String) = attrs.put("label", s)
     fun color(s: String) = attrs.put("color", s)
     fun invisible() = attrs.put("style", "invis")
+    fun dashed() = attrs.put("style", "dashed")
+    fun dotted() = attrs.put("style", "dotted")
+    fun bold() = attrs.put("style", "bold")
     fun attr(key: String, value: String) = attrs.put(key, value)
 }
 
@@ -209,19 +212,35 @@ private fun AbstractJimpleBasedICFG.getReconstructedSuccsOf(
 fun AbstractJimpleBasedICFG.toDotString(method: SootMethod, reconstructJava: Boolean = false): String {
     val inlinedLocals = mutableMapOf<JimpleLocal, Value>()
 
-    fun buildGraph(stmt: soot.Unit, graph: DirectedUnlabeledGraph<Unit>): DirectedUnlabeledGraph<Unit> {
-        val newGraph = when (stmt) {
-            is IfStmt -> graph.configureNode(stmt) {
-                label(stmt.prettyPrint(inlinedLocals))
-                color("blue")
+    fun resolveGoto(u: Unit): Sequence<Unit> = when (u) {
+        is GotoStmt -> getSuccsOf(u.target).asSequence().flatMap(::resolveGoto)
+        else -> sequenceOf(u)
+    }
+
+    fun getSuccsSkippingGotos(u: Unit): Sequence<Unit> =
+        getSuccsOf(u).asSequence().flatMap(::resolveGoto)
+
+    fun buildGraph(stmt: Unit, graph: DirectedUnlabeledGraph<Unit>): DirectedUnlabeledGraph<Unit> {
+        val succs = if (reconstructJava) getReconstructedSuccsOf(stmt, inlinedLocals) else getSuccsSkippingGotos(stmt).asSequence()
+        val newGraph = succs.fold(graph) { g, succ -> buildGraph(succ, g).addEdge(stmt to succ) }
+
+        return when (stmt) {
+            is IfStmt -> {
+                val trueTargets = resolveGoto(stmt.target)
+                val falseTargets = (succs - trueTargets).flatMap(::resolveGoto)
+                falseTargets
+                    .fold(newGraph) { g, succ ->
+                        g.configureEdge(stmt to succ) { dashed() }
+                    }
+                    .configureNode(stmt) {
+                        label(stmt.prettyPrint(inlinedLocals))
+                        color("blue")
+                    }
             }
-            else -> graph.configureNode(stmt) {
+            else -> newGraph.configureNode(stmt) {
                 label(stmt.prettyPrint(inlinedLocals))
             }
         }
-
-        val succs = if (reconstructJava) getReconstructedSuccsOf(stmt, inlinedLocals) else getSuccsOf(stmt).asSequence()
-        return succs.fold(newGraph) { g, succ -> buildGraph(succ, g).addEdge(stmt to succ) }
     }
 
     val graph = getStartPointsOf(method).fold(DirectedGraph.emptyUnlabeled<Unit>()) { g, stmt -> buildGraph(stmt, g) }
