@@ -30,6 +30,15 @@ private fun <E : Unit> PatchingChain<E>.getPredsOf(item: E): Sequence<E> = seque
     }
 }
 
+private fun defaultValue(type: Type) = when (type) {
+    is IntType -> JConstant(IntConstant.v(0))
+    is LongType -> JConstant(LongConstant.v(0))
+    is FloatType -> JConstant(FloatConstant.v(0f))
+    is DoubleType -> JConstant(DoubleConstant.v(.0))
+    is BooleanType -> JFalse
+    else -> JNull
+}
+
 /**
  * Tries to discover the code pattern that Jimple produces for statements like 'String x = (i == 15) ? a : b'
  * where a and b are of type Boolean. This also covers simpler conditional assignments like 'boolean x = (i == 15)'.
@@ -96,6 +105,7 @@ fun tryFindDefinition(local: Local, context: ProgramContext): JExpression? {
             .toList()
 
         when (assignments.size) {
+            0 -> defaultValue(local.type)
             1 -> parseJimpleExpression(assignments[0].rightOp, ProgramContext(assignments[0], context.method), NoTypeHint)
             2 -> tryFindConditionalAssignmentPattern(local, context, assignments[0], assignments[1])
             else -> null
@@ -131,13 +141,13 @@ fun refine(expr: JExpression): JExpression =
 
                     refined.left is JCompare && ((refined.right as? JConstant)?.value as? IntConstant)?.value == 0 -> {
                         // Turn e.g. '(x cmp y) <= 0' into 'x <= y'
-                        val cmp = refined.left as JCompare
+                        val cmp = refined.left
                         condition(refine(cmp.left), refine(cmp.right), refined.symbol)
                     }
 
                     refined.left is JCompareGreater && ((refined.right as? JConstant)?.value as? IntConstant)?.value == 0 -> {
                         // Turn e.g. '(x cmpg y) <= 0' into 'x <= y'
-                        val cmpg = refined.left as JCompareGreater
+                        val cmpg = refined.left
                         condition(refine(cmpg.left), refine(cmpg.right), refined.symbol)
                     }
 
