@@ -246,3 +246,14 @@ fun AbstractJimpleBasedICFG.toDotString(method: SootMethod, reconstructJava: Boo
     val graph = getStartPointsOf(method).fold(DirectedGraph.emptyUnlabeled<Unit>()) { g, stmt -> buildGraph(stmt, g) }
     return graph.toDotString()
 }
+
+/**
+ * Transforms a Soot directed graph (such as a CFG) into a [DirectedUnlabeledGraph] suitable for
+ * rendering into Graphviz DOT format.
+ */
+fun <N> soot.toolkits.graph.DirectedGraph<N>.toDirectedGraph(): DirectedUnlabeledGraph<N> {
+    fun traverseCfg(dotGraph: DirectedUnlabeledGraph<N>, u: N): DirectedUnlabeledGraph<N> =
+        getSuccsOf(u).fold(dotGraph) { g, succ -> traverseCfg(g, succ).addEdge(u to succ) }
+
+    return heads.fold(DirectedGraph.emptyUnlabeled(), ::traverseCfg)
+}

@@ -9,6 +9,7 @@ import crypto.pathconditions.refinement.refine
 import soot.PackManager
 import soot.SceneTransformer
 import soot.Transform
+import soot.Unit
 import java.lang.Exception
 
 /**
@@ -18,11 +19,15 @@ import java.lang.Exception
 
 fun solve(query: PathConditionsQuery): Set<PathConditionResult> {
     val relevantStatements = extractRelevantStatements(query)
-    return computeRefinedSimplifiedPathConditions(relevantStatements, emptySet() /* TODO: foreignRelevantStatements */)
+    return computeRefinedSimplifiedPathConditions(query.statement, relevantStatements, emptySet() /* TODO: foreignRelevantStatements */)
 }
 
-fun computeRefinedSimplifiedPathConditions(relevantStatements: Set<Statement>, foreignRelevantStatements: Set<Statement>) =
-    computePathConditions(relevantStatements, foreignRelevantStatements)
+fun computeRefinedSimplifiedPathConditions(
+    sinkStatement: Unit,
+    relevantStatements: Set<Statement>,
+    foreignRelevantStatements: Set<Statement>) =
+
+    computePathConditions(sinkStatement, relevantStatements, foreignRelevantStatements)
         .map {
             try {
                 it.copy(condition = simplifyTerm(refine(it.condition)))

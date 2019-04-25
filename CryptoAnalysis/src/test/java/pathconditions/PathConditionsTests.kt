@@ -10,13 +10,22 @@ import javax.crypto.Cipher
 import kotlin.reflect.KFunction
 import kotlin.test.assertEquals
 
-data class DataFlow(val relevantLines: Set<Int>, val expectedCondition: String)
+/**
+ * @param relevantLines The line numbers (with 0 referring to the first statement in the test method) of relevant statements. The last line number is used to determine the sink statement.
+ * @param expectedCondition Expected condition as String
+ */
+data class DataFlow(val relevantLines: List<Int>, val expectedCondition: String)
 
+@Suppress("CanBeVal", "LiftReturnOrAssignment", "ConstantConditionIf", "ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE", "UNUSED_VALUE", "VARIABLE_WITH_REDUNDANT_INITIALIZER")
 class PathConditionsTests : SootBasedTest() {
+
+    val c1 = false
+    val c2 = false
+    val i = 0
+    val j = 0
+
     /**
      * Given a set of relevant statements, tests whether the correct path conditions are computed.
-     * @param relevantLines The line numbers (with 0 referring to the first statement in [testMethod]) of relevant statements
-     * @param expectedConditions Expected conditions as Strings
      * @param testMethod The method to be analyzed
      */
     fun test(testMethod: KFunction<Unit>, vararg dataFlows: DataFlow) {
@@ -28,6 +37,10 @@ class PathConditionsTests : SootBasedTest() {
             .first { it >= 0 }
 
         dataFlows.forEach { flow ->
+            val sinkStatement = units
+                .singleOrNull { it.lineNumber() - firstLine == flow.relevantLines.last() }
+                ?: throw Exception("No (unique) sink statement found at line '${flow.relevantLines.last()}'")
+
             val relevantStatements = units
                 .filter { it.lineNumber() - firstLine in flow.relevantLines }
                 .map { Statement(it as Stmt, method) }
@@ -43,7 +56,7 @@ class PathConditionsTests : SootBasedTest() {
                 .map { Statement(it as Stmt, method) }
                 .toSet()
 
-            val conditions = computeRefinedSimplifiedPathConditions(relevantStatements, foreignRelevantStmts)
+            val conditions = computeRefinedSimplifiedPathConditions(sinkStatement, relevantStatements, foreignRelevantStmts)
 
             val conditionsAsString = conditions
                 .map { it.condition.toString(ContextFormat.ContextFree) }
@@ -55,7 +68,7 @@ class PathConditionsTests : SootBasedTest() {
     }
 
 
-    private fun simpleBranching(i: Int) {
+    private fun simpleBranching() {
         if (i > 0) {
             if (i < 5) {
                 nop()
@@ -65,30 +78,25 @@ class PathConditionsTests : SootBasedTest() {
         } else {
             nop()
         }
+        nop() // sink
     }
 
     @Test
     fun simpleBranchingTest1() = test(
         ::simpleBranching,
-        DataFlow(setOf(2), "\$param0 > 0L && 5L > \$param0")
+        DataFlow(listOf(2, 9), "this.i > 0L && 5L > this.i")
     )
 
     @Test
     fun simpleBranchingTest2() = test(
         ::simpleBranching,
-        DataFlow(setOf(4), "\$param0 >= 5L") // implies "$param0 > 0"
+        DataFlow(listOf(4, 9), "this.i >= 5L") // implies "$param0 > 0"
     )
 
     @Test
     fun simpleBranchingTest3() = test(
         ::simpleBranching,
-        DataFlow(setOf(7), "\$param0 <= 0L")
-    )
-
-    @Test
-    fun simpleBranchingTest4() = test(
-        ::simpleBranching,
-        DataFlow(setOf(4, 7), "false")
+        DataFlow(listOf(7, 9), "this.i <= 0L")
     )
 
     private fun singleFlow1() {
@@ -102,7 +110,7 @@ class PathConditionsTests : SootBasedTest() {
     @Test
     fun singleFlow1Test() = test(
         ::singleFlow1,
-        DataFlow(setOf(0, 4), "true")
+        DataFlow(listOf(0, 4), "true")
     )
 
     private fun singleFlow2() {
@@ -114,7 +122,28 @@ class PathConditionsTests : SootBasedTest() {
     @Test
     fun singleFlow2Test() = test(
         ::singleFlow2,
-        DataFlow(setOf(1, 2), "true")
+        DataFlow(listOf(1, 2), "true")
+    )
+
+    private fun singleFlowTwoWays() {
+        val x = "A"
+        var z: String? = null
+        if (i > 0) {
+            if (j < 5) {
+                nop()
+            } else {
+                z = x
+            }
+        } else {
+            z = x
+        }
+        Cipher.getInstance(z) // sink
+    }
+
+    @Test
+    fun singleFlowTwoWaysTest() = test(
+        ::singleFlowTwoWays,
+        DataFlow(listOf(0, 6, 9, 11), "this.j >= 5L || this.i <= 0L")
     )
 
     private fun multiFlow1() {
@@ -127,8 +156,8 @@ class PathConditionsTests : SootBasedTest() {
     @Test
     fun multiFlow1Test() = test(
         ::multiFlow1,
-        DataFlow(setOf(2, 3), "Math.random() < 0.5"),
-        DataFlow(setOf(0, 3), "0.5 <= Math.random()")
+        DataFlow(listOf(2, 3), "Math.random() < 0.5"),
+        DataFlow(listOf(0, 3), "0.5 <= Math.random()")
     )
 
     private fun multiFlow2() {
@@ -142,8 +171,8 @@ class PathConditionsTests : SootBasedTest() {
     @Test
     fun multiFlow2Test() = test(
         ::multiFlow2,
-        DataFlow(setOf(0, 3, 4), "Math.random() < 0.5"),
-        DataFlow(setOf(1, 4), "0.5 <= Math.random()")
+        DataFlow(listOf(0, 3, 4), "Math.random() < 0.5"),
+        DataFlow(listOf(1, 4), "0.5 <= Math.random()")
     )
 
     private fun multiFlow3() {
@@ -157,7 +186,85 @@ class PathConditionsTests : SootBasedTest() {
     @Test
     fun multiFlow3Test() = test(
         ::multiFlow3,
-        DataFlow(setOf(0, 1, 4), "0.5 <= Math.random()"),
-        DataFlow(setOf(1, 3, 4), "Math.random() < 0.5")
+        DataFlow(listOf(0, 1, 4), "0.5 <= Math.random()"),
+        DataFlow(listOf(1, 3, 4), "Math.random() < 0.5")
+    )
+
+    private fun merge1() {
+        val x = "A" // 1
+        var y: String? = null
+        var z: String? = null
+        if (c1) {
+            if (c2)
+                y = x // 1
+            else
+                z = x
+            z = y // 1
+        }
+        Cipher.getInstance(z) // 1
+    }
+
+    @Test
+    fun merge1Test() = test(
+        ::merge1,
+        DataFlow(listOf(0, 5, 8, 10), "this.c1 && this.c2")
+    )
+
+
+    private fun merge2() {
+        val x = "A" // 1
+        var y: String? = null
+        var z: String? = null
+        if (c1) {
+            if (c2) {
+                y = x // 1
+                z = y // 1
+            } else {
+                z = x // 1
+            }
+        }
+        Cipher.getInstance(z) // 1
+    }
+
+    @Test
+    fun merge2Test() = test(
+        ::merge2,
+        DataFlow(listOf(0, 5, 6, 8, 11), "this.c1")
+    )
+
+    private fun equalAllocSites() {
+        var x: String? = null // null assignment required to prevent optimization
+        if (c1)
+            x = "A"
+        else
+            x = "A"
+        Cipher.getInstance(x)
+    }
+
+    @Test
+    fun equalAllocSitesTest() = test(
+        ::equalAllocSites,
+        DataFlow(listOf(2, 5), "this.c1"),
+        DataFlow(listOf(4, 5), "!this.c1")
+    )
+
+    private fun superfluousAssignment() {
+        val x = "A"
+        var y = x
+        if (c1)
+            y = x
+        if (c2)
+            y = x
+        Cipher.getInstance(y)
+    }
+
+    @Test
+    fun superfluousAssignmentTest() = test(
+        ::superfluousAssignment,
+        // Optimally, we would know that the two 'y = x' assignments are useless, but since
+        // we don't track variable values we have to be conservative and assume that the
+        // statements are required. This results in a condition that only covers a subset of
+        // the possible scenarios that lead to this data flow.
+        DataFlow(listOf(0, 1, 3, 5, 6), "this.c1 && this.c2")
     )
 }
