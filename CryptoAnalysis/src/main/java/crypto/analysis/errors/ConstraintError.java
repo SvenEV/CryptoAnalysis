@@ -3,6 +3,7 @@ package crypto.analysis.errors;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import com.google.common.base.CharMatcher;
 import com.google.common.collect.Multimap;
@@ -13,6 +14,7 @@ import boomerang.jimple.Val;
 import crypto.analysis.IAnalysisSeed;
 import crypto.extractparameter.CallSiteWithExtractedValue;
 import crypto.interfaces.ISLConstraint;
+import crypto.pathconditions.PathConditionResult;
 import crypto.rules.CryptSLArithmeticConstraint;
 import crypto.rules.CryptSLComparisonConstraint;
 import crypto.rules.CryptSLComparisonConstraint.CompOp;
@@ -27,6 +29,8 @@ import soot.jimple.Constant;
 import soot.jimple.Stmt;
 import soot.jimple.internal.AbstractInvokeExpr;
 import sync.pds.solver.nodes.Node;
+
+import static crypto.pathconditions.AnalysisEntryPointKt.computeRefinedSimplifiedPathConditions;
 
 public class ConstraintError extends ErrorWithObjectAllocation{
 
@@ -214,6 +218,18 @@ public class ConstraintError extends ErrorWithObjectAllocation{
 		msg.delete(msg.length() - 2, msg.length());
 		return msg.append('}').toString();
 	}
+
+	@Override
+	public Set<PathConditionResult> getPathConditions() {
+		Set<Statement> relevantStatements = getDataFlowPath().stream().map(Node::stmt).collect(Collectors.toSet());
+		Set<Statement> foreignRelevantStmts = getAllDataFlowPaths().values().stream().map(Node::stmt).collect(Collectors.toSet());
+
+		return computeRefinedSimplifiedPathConditions(
+				getObjectLocation().stmt().getUnit().get(),
+				relevantStatements,
+				foreignRelevantStmts);
+	}
+
 	public static String filterQuotes(final String dirty) {
 		return CharMatcher.anyOf("\"").removeFrom(dirty);
 	}

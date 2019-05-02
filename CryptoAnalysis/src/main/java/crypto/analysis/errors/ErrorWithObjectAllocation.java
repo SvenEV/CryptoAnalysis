@@ -8,7 +8,7 @@ import crypto.rules.CryptSLRule;
 import sync.pds.solver.nodes.Node;
 
 import java.util.Collection;
-import java.util.List;
+import java.util.Collections;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -36,18 +36,12 @@ public abstract class ErrorWithObjectAllocation extends AbstractError {
 		return objectAllocationLocation.getDataFlowPath();
 	}
 
-	/**
-	 * @param relatedErrors Errors that relate to the same statement as this error
-	 */
-	public Set<PathConditionResult> getPathConditions(List<ErrorWithObjectAllocation> relatedErrors) {
+	public Set<PathConditionResult> getPathConditions() {
 		Set<Statement> relevantStatements = getDataFlowPath().stream().map(Node::stmt).collect(Collectors.toSet());
-		Set<Statement> foreignRelevantStmts = relatedErrors.stream()
-				.flatMap(error -> error.getDataFlowPath().stream().map(Node::stmt))
-				.collect(Collectors.toSet());
 
 		return computeRefinedSimplifiedPathConditions(
 				objectAllocationLocation.stmt().getUnit().get(),
 				relevantStatements,
-				foreignRelevantStmts);
+				Collections.emptySet());
 	}
 }
