@@ -1,21 +1,13 @@
 package tests.headless;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.Set;
 
-import org.apache.maven.shared.invoker.DefaultInvocationRequest;
-import org.apache.maven.shared.invoker.DefaultInvoker;
-import org.apache.maven.shared.invoker.InvocationRequest;
-import org.apache.maven.shared.invoker.Invoker;
-import org.apache.maven.shared.invoker.MavenInvocationException;
 import org.junit.Before;
-import org.junit.Ignore;
-import org.junit.Test;
 
 import com.google.common.collect.HashBasedTable;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Table;
 import com.google.common.collect.Table.Cell;
@@ -28,21 +20,17 @@ import boomerang.results.ForwardBoomerangResults;
 import crypto.HeadlessCryptoScanner;
 import crypto.analysis.AnalysisSeedWithSpecification;
 import crypto.analysis.CrySLAnalysisListener;
+import crypto.analysis.CrySLRulesetSelector;
+import crypto.analysis.CrySLRulesetSelector.Ruleset;
 import crypto.analysis.EnsuredCryptSLPredicate;
 import crypto.analysis.IAnalysisSeed;
 import crypto.analysis.errors.AbstractError;
-import crypto.analysis.errors.ConstraintError;
-import crypto.analysis.errors.ImpreciseValueExtractionError;
-import crypto.analysis.errors.IncompleteOperationError;
-import crypto.analysis.errors.NeverTypeOfError;
-import crypto.analysis.errors.RequiredPredicateError;
-import crypto.analysis.errors.TypestateError;
 import crypto.extractparameter.CallSiteWithParamIndex;
 import crypto.extractparameter.ExtractedValue;
 import crypto.interfaces.ISLConstraint;
 import crypto.rules.CryptSLPredicate;
+import crypto.rules.CryptSLRule;
 import soot.G;
-import soot.Scene;
 import sync.pds.solver.nodes.Node;
 import test.IDEALCrossingTestingFramework;
 import typestate.TransitionFunction;
@@ -65,20 +53,22 @@ public abstract class AbstractHeadlessTest {
 		return mi;
 	}
 
-	protected HeadlessCryptoScanner createScanner(MavenProject mp,
-			String rulesDir) {
+	protected HeadlessCryptoScanner createScanner(MavenProject mp) {
+		return createScanner(mp, Ruleset.JavaCryptographicArchitecture);
+	}
+	
+	protected HeadlessCryptoScanner createScanner(MavenProject mp, Ruleset ruleset) {
 		G.v().reset();
 		HeadlessCryptoScanner scanner = new HeadlessCryptoScanner() {
-			@Override
-			protected String getRulesDirectory() {
-				return rulesDir;
-			}
-
 			@Override
 			protected String sootClassPath() {
 				return mp.getBuildDirectory() +(mp.getFullClassPath().equals("") ? "": File.pathSeparator+ mp.getFullClassPath());
 			}
 
+			@Override
+			protected List<CryptSLRule> getRules() {
+				return CrySLRulesetSelector.makeFromRuleset(IDEALCrossingTestingFramework.RULES_BASE_DIR, ruleset);
+			}
 			@Override
 			protected String applicationClassPath() {
 				return mp.getBuildDirectory();

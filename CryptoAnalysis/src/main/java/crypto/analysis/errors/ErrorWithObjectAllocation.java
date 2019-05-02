@@ -5,11 +5,9 @@ import boomerang.jimple.Val;
 import crypto.analysis.IAnalysisSeed;
 import crypto.pathconditions.PathConditionResult;
 import crypto.rules.CryptSLRule;
-import kotlin.Lazy;
-import kotlin.LazyKt;
 import sync.pds.solver.nodes.Node;
 
-import java.util.HashSet;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -34,7 +32,7 @@ public abstract class ErrorWithObjectAllocation extends AbstractError {
 		return "";
 	}
 
-	public Set<Node<Statement, Val>> getDataFlowPath() {
+	public Collection<Node<Statement, Val>> getDataFlowPath() {
 		return objectAllocationLocation.getDataFlowPath();
 	}
 
