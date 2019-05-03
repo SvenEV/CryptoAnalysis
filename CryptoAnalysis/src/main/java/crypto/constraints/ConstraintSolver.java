@@ -13,7 +13,7 @@ import java.util.Set;
 
 import boomerang.jimple.Statement;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
+import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import crypto.analysis.AnalysisSeedWithSpecification;
@@ -408,12 +408,12 @@ public class ConstraintSolver {
 			} catch (NumberFormatException ex) {
 				//2. If not, it's a variable name.
 				//Get value of variable left from map
-				final Map<String, CallSiteWithExtractedValue> valueCollection = extractValueAsString(exp, cons);
+				final Multimap<String, CallSiteWithExtractedValue> valueCollection = extractValueAsString(exp, cons);
 				if (valueCollection.isEmpty()) {
 					return valuesInt;
 				}
 				try {
-					for (Entry<String, CallSiteWithExtractedValue> value : valueCollection.entrySet()) {
+					for (Entry<String, CallSiteWithExtractedValue> value : valueCollection.entries()) {
 						valuesInt.put(Integer.parseInt(value.getKey()), value.getValue());
 					}
 				} catch (NumberFormatException ex1) {
@@ -453,12 +453,12 @@ public class ConstraintSolver {
 
 		private List<Entry<String, CallSiteWithExtractedValue>> getValFromVar(CryptSLObject var, ISLConstraint cons) {
 			final String varName = var.getVarName();
-			final Map<String, CallSiteWithExtractedValue> valueCollection = extractValueAsString(varName, cons);
+			final Multimap<String, CallSiteWithExtractedValue> valueCollection = extractValueAsString(varName, cons);
 			List<Entry<String, CallSiteWithExtractedValue>> vals = new ArrayList<>();
 			if (valueCollection.isEmpty()) {
 				return vals;
 			}
-			for (Entry<String, CallSiteWithExtractedValue> e : valueCollection.entrySet()) {
+			for (Entry<String, CallSiteWithExtractedValue> e : valueCollection.entries()) {
 				CryptSLSplitter splitter = var.getSplitter();
 				final CallSiteWithExtractedValue location = e.getValue();
 				String val = e.getKey();
@@ -503,8 +503,8 @@ public class ConstraintSolver {
 			return !errors.isEmpty();
 		}
 
-		protected Map<String, CallSiteWithExtractedValue> extractValueAsString(String varName, ISLConstraint cons) {
-			Map<String, CallSiteWithExtractedValue> varVal = Maps.newHashMap();
+		protected Multimap<String, CallSiteWithExtractedValue> extractValueAsString(String varName, ISLConstraint cons) {
+			Multimap<String, CallSiteWithExtractedValue> varVal = HashMultimap.create();
 			for (CallSiteWithParamIndex wrappedCallSite : parsAndVals.keySet()) {
 				final Stmt callSite = wrappedCallSite.stmt().getUnit().get();
 
