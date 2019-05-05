@@ -7,6 +7,7 @@ import boomerang.solver.AbstractBoomerangSolver
 import soot.SootMethod
 import soot.Value
 import soot.jimple.Stmt
+import soot.jimple.spark.ondemand.genericutil.ImmutableStack
 import soot.tagkit.Tag
 import wpds.impl.Weight
 
@@ -47,3 +48,11 @@ val SootMethod.parameterNames
         .firstOrNull()
         ?.parameterNames
         ?: (0 until parameterCount).map { "\$param$it" }
+
+fun <T> ImmutableStack<T>.asSequence(): Sequence<T> = sequence {
+    // super inefficient, but there's no other way to traverse the stack entries
+    if (!isEmpty) {
+        yield(peek())
+        yieldAll(pop().asSequence())
+    }
+}

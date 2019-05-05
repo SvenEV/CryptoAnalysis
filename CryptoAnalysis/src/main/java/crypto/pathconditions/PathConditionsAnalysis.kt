@@ -1,18 +1,25 @@
 package crypto.pathconditions
 
 import boomerang.jimple.Statement
+import com.google.common.collect.ImmutableList
 import com.microsoft.z3.BoolExpr
 import crypto.pathconditions.expressions.*
-import crypto.pathconditions.graphviz.*
 import crypto.pathconditions.graphviz.DirectedGraph
+import crypto.pathconditions.graphviz.DirectedUnlabeledGraph
+import crypto.pathconditions.graphviz.addEdge
+import crypto.pathconditions.graphviz.buildGraph
 import crypto.pathconditions.refinement.refine
-import crypto.pathconditions.z3.*
-import soot.*
+import crypto.pathconditions.z3.createSolver
+import crypto.pathconditions.z3.decode
+import crypto.pathconditions.z3.encode
+import crypto.pathconditions.z3.simplify
+import soot.SootMethod
 import soot.Unit
 import soot.jimple.IfStmt
 import soot.jimple.Stmt
 import soot.jimple.spark.ondemand.genericutil.ImmutableStack
-import soot.toolkits.graph.*
+import soot.toolkits.graph.ExceptionalUnitGraph
+import soot.toolkits.graph.UnitGraph
 import soot.toolkits.scalar.ForwardBranchedFlowAnalysis
 
 //
@@ -55,7 +62,7 @@ fun JExpression.toDotGraph(): DirectedUnlabeledGraph<Box<JExpression>> {
         .buildTree(Box(this))
 }
 
-fun <T> ImmutableStack<T>.replaceTop(entry: T) = pop().push(entry)
+fun <T> ImmutableStack<T>.replaceTop(entry: T) = pop().push(entry)!!
 
 /** A generic wrapper providing reference equality */
 class Box<T>(val content: T) {
@@ -69,12 +76,17 @@ class MBox<T>(var content: T) {
     override fun hashCode() = content?.hashCode() ?: 0
 }
 
+data class BranchingStackFrame(
+    val blockUsage: BlockUsage,
+    val surroundingIf: IfStmt?
+)
+
 data class Fact(
     val condition: JExpression,
     val branchStatements: Set<Statement>, // the if-statements the condition was constructed from
-    val stack: ImmutableStack<BlockUsage>)
+    val branchingStack: ImmutableStack<BranchingStackFrame>) // stack head represents the closest (i.e. innermost) if-statement relative to the current statement
 
-typealias FactBox = MBox<Fact>
+typealias FactBox = MBox<ImmutableList<Fact>>
 
 /** The different ways a code block can be "used" by one or multiple data flows. */
 enum class BlockUsage {
@@ -126,57 +138,82 @@ private class PathConditionsAnalysis(
                 },
                 onEdge = { u, succ, graph ->
                     graph.configureEdge(u to succ) {
-                        val fact = getFlowBefore(succ)
-                        label(simplifyTerm(refine(fact.content.condition)).toString(ContextFormat.ContextFree) + "\n" + fact.content.stack)
+                        // val fact = getFlowBefore(succ)
+                        val fact =
+                            when (u) {
+                                is IfStmt ->
+                                    if (succ == u.target)
+                                        getBranchFlowAfter(u).single()
+                                    else
+                                        getFallFlowAfter(u)
+                                else ->
+                                    getFallFlowAfter(u)
+                            }.content.single()
+
+                        val condition = simplifyTerm(refine(fact.condition)).toString(ContextFormat.ContextFree)
+                        val stack = fact.branchingStack.asSequence().map { it.blockUsage }.toList()
+                        label("$condition\n$stack")
                     }
                 })
         }
 
-    override fun newInitialFlow() = FactBox(Fact(
-        JTrue,
-        emptySet(),
-        ImmutableStack.emptyStack<BlockUsage>().push(BlockUsage.None)))
+    override fun newInitialFlow() = FactBox(ImmutableList.of(
+        Fact(
+            JTrue,
+            emptySet(),
+            ImmutableStack.emptyStack<BranchingStackFrame>().push(BranchingStackFrame(BlockUsage.None, null)))))
 
     override fun merge(left: FactBox, right: FactBox, merged: FactBox) {
-        val outerUsageStack = (if (left.content.stack.size() > right.content.stack.size()) left else right).content.stack.pop()
-        val outerUsage = outerUsageStack.peek()
-        val leftUsage = left.content.stack.peek()
-        val rightUsage = right.content.stack.peek()
-
-        fun takeLeftCondition() = Fact(
-            left.content.condition,
-            left.content.branchStatements,
-            outerUsageStack.replaceTop(BlockUsage.max(outerUsage, leftUsage)))
-
-        fun takeRightCondition() = Fact(
-            right.content.condition,
-            right.content.branchStatements,
-            outerUsageStack.replaceTop(BlockUsage.max(outerUsage, rightUsage)))
-
-        fun takeBothConditions() = Fact(
-            or(left.content.condition, right.content.condition),
-            left.content.branchStatements + right.content.branchStatements,
-            outerUsageStack.replaceTop(BlockUsage.max(outerUsage, leftUsage, rightUsage)))
-
-        merged.content =
-            when (leftUsage to rightUsage) {
-                BlockUsage.None to BlockUsage.None -> takeBothConditions()
-                BlockUsage.None to BlockUsage.Foreign -> takeLeftCondition()
-                BlockUsage.None to BlockUsage.Owned -> takeRightCondition()
-                BlockUsage.Foreign to BlockUsage.None -> takeRightCondition()
-                BlockUsage.Foreign to BlockUsage.Foreign -> takeBothConditions() // can this even happen?
-                BlockUsage.Foreign to BlockUsage.Owned -> takeRightCondition()
-                BlockUsage.Owned to BlockUsage.None -> takeLeftCondition()
-                BlockUsage.Owned to BlockUsage.Foreign -> takeLeftCondition()
-                BlockUsage.Owned to BlockUsage.Owned -> takeBothConditions()
-                else -> throw Exception() // 'else' required (Kotlin can't prove exhaustion here)
-            }
-
-        // println("MERGE '${left.content.condition.toString(ContextFormat.ContextFree)}' and '${right.content.condition.toString(ContextFormat.ContextFree)}' ==> '${merged.content.condition.toString(ContextFormat.ContextFree)}'")
+        merged.content = ImmutableList.copyOf(left.content + right.content)
     }
 
     override fun copy(source: FactBox?, target: FactBox?) {
         target!!.content = source!!.content
+    }
+
+    private fun doMerge(left: Fact, right: Fact): Fact {
+        // 'left' and 'right' must belong to the same if
+        assert(left.branchingStack.size() == right.branchingStack.size())
+        assert(left.branchingStack.peek().surroundingIf == right.branchingStack.peek().surroundingIf)
+
+        val leftUsage = left.branchingStack.peek().blockUsage
+        val rightUsage = right.branchingStack.peek().blockUsage
+        val surroundingIf = left.branchingStack.peek().surroundingIf // same as right.branchingStack.peek().surroundingIf
+
+        fun leftOrRight() = Fact(
+            or(left.condition, right.condition),
+            left.branchStatements + right.branchStatements,
+            left.branchingStack.replaceTop(BranchingStackFrame(
+                BlockUsage.max(leftUsage, rightUsage),
+                surroundingIf)))
+
+        fun neither() = Fact(
+            JFalse,
+            left.branchStatements + right.branchStatements,
+            left.branchingStack.replaceTop(BranchingStackFrame(
+                BlockUsage.max(leftUsage, rightUsage),
+                surroundingIf)))
+
+        return when (leftUsage to rightUsage) {
+            BlockUsage.None to BlockUsage.None -> leftOrRight()
+            BlockUsage.None to BlockUsage.Foreign -> left
+            BlockUsage.None to BlockUsage.Owned -> right
+            BlockUsage.Foreign to BlockUsage.None -> right
+            BlockUsage.Foreign to BlockUsage.Foreign -> neither() // discard both branches (there must be a higher-level alternative path)
+            BlockUsage.Foreign to BlockUsage.Owned -> right
+            BlockUsage.Owned to BlockUsage.None -> left
+            BlockUsage.Owned to BlockUsage.Foreign -> left
+            BlockUsage.Owned to BlockUsage.Owned -> leftOrRight()
+            else -> throw Exception() // 'else' required (Kotlin can't prove exhaustion here)
+        }
+    }
+
+    private fun popMax(fact: Fact): Fact {
+        val reducedStack = fact.branchingStack.pop()
+        val inner = fact.branchingStack.peek().blockUsage
+        val outer = reducedStack.peek().blockUsage
+        return fact.copy(branchingStack = reducedStack.replaceTop(
+            reducedStack.peek().copy(blockUsage = BlockUsage.max(inner, outer))))
     }
 
     override fun flowThrough(
@@ -184,49 +221,74 @@ private class PathConditionsAnalysis(
         stmt: Unit?,
         fallOuts: List<FactBox>?,
         branchOuts: List<FactBox>?
-    ) = when (stmt) {
-        is IfStmt -> {
-            val condition = parseJimpleExpression(stmt.condition, ProgramContext(stmt, method), ForceBool)
-            val trueCondition = and(input.content.condition, condition)
-            val falseCondition = and(input.content.condition, not(condition))
-
-            val newStack = input.content.stack.push(BlockUsage.None)
-            val newBranchStatements = input.content.branchStatements + Statement(stmt as Stmt, method)
-            val trueFact = Fact(trueCondition, newBranchStatements, newStack)
-            val falseFact = Fact(falseCondition, newBranchStatements, newStack)
-
-            branchOuts!![0].content = trueFact
-            fallOuts!![0].content = falseFact
-            Unit
-        }
-        else -> {
-            val currentUsage = input.content.stack.peek()!!
-            val isOwnStmt = ownRelevantStatements.any { it.unit.get() == stmt }
-            val isForeignStmt = foreignRelevantStatements.any { it.unit.get() == stmt }
-
-            val usageToPropagate = when (currentUsage) {
-                BlockUsage.Owned -> BlockUsage.Owned
-                BlockUsage.Foreign -> when {
-                    isOwnStmt -> BlockUsage.Owned
-                    else -> BlockUsage.Foreign
+    ) {
+        // First, merge until only one fact remains
+        // ---
+        // Use grouping to obtain facts "belonging" to the same if-statement.
+        // Merging goes bottom-up: Facts of innermost ifs are merged first, resulting in a "higher-level" fact
+        // which can then be merged with another one, etc.
+        var facts = input.content.toList()
+        while (facts.size > 1) {
+            facts = facts
+                .groupBy { fact -> fact.branchingStack.peek().surroundingIf }
+                .flatMap { (_, factGroup) ->
+                    when (factGroup.size) {
+                        1 -> factGroup // do nothing just yet, we'll get a second fact for this group after some more merging
+                        else -> {
+                            // (since we don't support 'switch' currently, the group size is at most 2)
+                            val merged = factGroup.drop(1).fold(factGroup[0], ::doMerge)
+                            listOf(popMax(merged))
+                        }
+                    }
                 }
-                BlockUsage.None -> when {
-                    isOwnStmt -> BlockUsage.Owned
-                    isForeignStmt -> BlockUsage.Foreign
+        }
+
+        val fact = facts.single()
+
+        return when (stmt) {
+            is IfStmt -> {
+                val condition = parseJimpleExpression(stmt.condition, ProgramContext(stmt, method), ForceBool)
+                val trueCondition = and(fact.condition, condition)
+                val falseCondition = and(fact.condition, not(condition))
+
+                val newStack = fact.branchingStack.push(BranchingStackFrame(BlockUsage.None, stmt))
+                val newBranchStatements = fact.branchStatements + Statement(stmt as Stmt, method)
+                val trueFact = Fact(trueCondition, newBranchStatements, newStack)
+                val falseFact = Fact(falseCondition, newBranchStatements, newStack)
+
+                branchOuts!![0].content = ImmutableList.of(trueFact)
+                fallOuts!![0].content = ImmutableList.of(falseFact)
+                Unit
+            }
+            else -> {
+                val stmtUsage = when {
+                    ownRelevantStatements.any { it.unit.get() == stmt } -> BlockUsage.Owned
+                    foreignRelevantStatements.any { it.unit.get() == stmt } -> BlockUsage.Foreign
                     else -> BlockUsage.None
                 }
-            }
 
-            val newStack = input.content.stack.replaceTop(usageToPropagate)
+                val currentFrame = fact.branchingStack.peek()
+                val usageToPropagate = BlockUsage.max(currentFrame.blockUsage, stmtUsage)
+                val conditionToPropagate = when (usageToPropagate) {
+                    BlockUsage.Foreign -> JFalse
+                    else -> fact.condition
+                }
+                val newFacts = ImmutableList.of(
+                    fact.copy(
+                        condition = conditionToPropagate,
+                        branchingStack = fact.branchingStack.replaceTop(currentFrame.copy(blockUsage = usageToPropagate))
+                    )
+                )
 
-            if (stmt!!.branches()) {
-                if (branchOuts!!.any())
-                    branchOuts[0].content = input.content.copy(stack = newStack)
-                Unit
-            } else {
-                if (fallOuts!!.any())
-                    fallOuts[0].content = input.content.copy(stack = newStack)
-                Unit
+                if (stmt!!.branches()) {
+                    if (branchOuts!!.any())
+                        branchOuts[0].content = newFacts
+                    Unit
+                } else {
+                    if (fallOuts!!.any())
+                        fallOuts[0].content = newFacts
+                    Unit
+                }
             }
         }
     }
@@ -259,8 +321,8 @@ fun computePathConditions(
             val cfg = ExceptionalUnitGraph(method.activeBody)
             val result = PathConditionsAnalysis(cfg, method, relevantStatements, foreignRelevantStatements)
             val flowAtSink = result.getFlowBefore(sinkStatement)
-            val branchStatements = flowAtSink.content.branchStatements
-            val methodCondition = flowAtSink.content.condition
+            val branchStatements = flowAtSink?.content?.single()?.branchStatements ?: emptySet()
+            val methodCondition = flowAtSink?.content?.single()?.condition ?: JTrue
             PathConditionResult(method, methodCondition, branchStatements) { result.resultsToDirectedGraph() }
         }
         .filter { it.condition != JTrue } // ignore relevant statements that are reached unconditionally
