@@ -162,7 +162,7 @@ class DirectedGraph<N, E>(
             }
             .joinToString()
 
-        nodesIndexed.forEach { node, i ->
+        nodesIndexed.forEach { (node, i) ->
             val attrs = attributesToString(ensureHasLabel(node.toString(), node(node)!!.attributes))
             sb.appendln("    n$i [$attrs]")
         }
@@ -206,44 +206,54 @@ private fun AbstractJimpleBasedICFG.getReconstructedSuccsOf(
         sequenceOf(it)
     }
 
+fun buildGraph(
+    stmt: Unit,
+    graph: DirectedUnlabeledGraph<Unit>,
+    getSuccsOf: (Unit) -> Iterable<Unit>,
+    onNode: (Unit, DirectedUnlabeledGraph<Unit>) -> DirectedUnlabeledGraph<Unit> = { _, g -> g },
+    onEdge: (Unit, Unit, DirectedUnlabeledGraph<Unit>) -> DirectedUnlabeledGraph<Unit> = { _, _, g -> g })
+    : DirectedUnlabeledGraph<Unit> {
+
+    fun resolveGoto(u: Unit): Unit = when (u) {
+        is GotoStmt -> resolveGoto(u.target)
+        else -> u
+    }
+
+    val succs = getSuccsOf(stmt).map(::resolveGoto)
+    val newGraph = succs.fold(graph) { g, succ ->
+        buildGraph(succ, g, getSuccsOf, onNode, onEdge)
+            .addEdge(stmt to succ)
+            .let { onEdge(stmt, succ, it) }
+    }
+
+    return when (stmt) {
+        is IfStmt -> {
+            val trueTargets = resolveGoto(stmt.target)
+            val falseTargets = (succs - trueTargets).map(::resolveGoto)
+            falseTargets
+                .fold(newGraph) { g, succ ->
+                    g.configureEdge(stmt to succ) { dashed() }
+                }
+                .configureNode(stmt) {
+                    label(stmt.prettyPrint())
+                    color("blue")
+                }
+                .let { onNode(stmt, it) }
+        }
+        else ->
+            newGraph
+                .configureNode(stmt) {
+                    label(stmt.prettyPrint())
+                }
+                .let { onNode(stmt, it) }
+    }
+}
+
 /**
  * Renders the control flow of a method as a graph in Graphviz DOT format.
  */
-fun AbstractJimpleBasedICFG.toDotString(method: SootMethod, reconstructJava: Boolean = false): String {
-    val inlinedLocals = mutableMapOf<JimpleLocal, Value>()
-
-    fun resolveGoto(u: Unit): Sequence<Unit> = when (u) {
-        is GotoStmt -> getSuccsOf(u.target).asSequence().flatMap(::resolveGoto)
-        else -> sequenceOf(u)
-    }
-
-    fun getSuccsSkippingGotos(u: Unit): Sequence<Unit> =
-        getSuccsOf(u).asSequence().flatMap(::resolveGoto)
-
-    fun buildGraph(stmt: Unit, graph: DirectedUnlabeledGraph<Unit>): DirectedUnlabeledGraph<Unit> {
-        val succs = if (reconstructJava) getReconstructedSuccsOf(stmt, inlinedLocals) else getSuccsSkippingGotos(stmt).asSequence()
-        val newGraph = succs.fold(graph) { g, succ -> buildGraph(succ, g).addEdge(stmt to succ) }
-
-        return when (stmt) {
-            is IfStmt -> {
-                val trueTargets = resolveGoto(stmt.target)
-                val falseTargets = (succs - trueTargets).flatMap(::resolveGoto)
-                falseTargets
-                    .fold(newGraph) { g, succ ->
-                        g.configureEdge(stmt to succ) { dashed() }
-                    }
-                    .configureNode(stmt) {
-                        label(stmt.prettyPrint(inlinedLocals))
-                        color("blue")
-                    }
-            }
-            else -> newGraph.configureNode(stmt) {
-                label(stmt.prettyPrint(inlinedLocals))
-            }
-        }
-    }
-
-    val graph = getStartPointsOf(method).fold(DirectedGraph.emptyUnlabeled<Unit>()) { g, stmt -> buildGraph(stmt, g) }
+fun AbstractJimpleBasedICFG.toDotString(method: SootMethod): String {
+    val graph = getStartPointsOf(method).fold(DirectedGraph.emptyUnlabeled<Unit>()) { g, stmt -> buildGraph(stmt, g, ::getSuccsOf) }
     return graph.toDotString()
 }
 

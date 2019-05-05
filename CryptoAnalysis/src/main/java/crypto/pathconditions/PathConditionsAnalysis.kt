@@ -113,23 +113,24 @@ private class PathConditionsAnalysis(
     }
 
     /** Creates a [DirectedUnlabeledGraph] suitable for visualizing the CFG and the flow facts at each statement. */
-    fun resultsToDirectedGraph(): DirectedUnlabeledGraph<Unit> {
-        fun traverseCfg(dotGraph: DirectedUnlabeledGraph<Unit>, u: Unit): DirectedUnlabeledGraph<Unit> {
-            val fact = getFlowBefore(u)
-            return graph.getSuccsOf(u)
-                .fold(dotGraph) { g, succ -> traverseCfg(g, succ).addEdge(u to succ) }
-                .configureNode(u) {
-                    attr("xlabel", simplifyTerm(refine(fact.content.condition)).toString(ContextFormat.ContextFree) + "\n" + fact.content.stack)
-
-                    if (u in ownRelevantStatements.map { it.unit.get() })
-                        color("green")
-                    else if (u in foreignRelevantStatements.map { it.unit.get() })
-                        color("red")
-                }
+    fun resultsToDirectedGraph() =
+        graph.heads.fold(DirectedGraph.emptyUnlabeled<Unit>()) { dotGraph, stmt ->
+            buildGraph(stmt, dotGraph, { graph.getSuccsOf(it) },
+                onNode = { u, graph ->
+                    graph.configureNode(u) {
+                        if (u in ownRelevantStatements.map { it.unit.get() })
+                            fillColor("#ffffcc")
+                        else if (u in foreignRelevantStatements.map { it.unit.get() })
+                            fillColor("#ffcccc")
+                    }
+                },
+                onEdge = { u, succ, graph ->
+                    graph.configureEdge(u to succ) {
+                        val fact = getFlowBefore(succ)
+                        label(simplifyTerm(refine(fact.content.condition)).toString(ContextFormat.ContextFree) + "\n" + fact.content.stack)
+                    }
+                })
         }
-
-        return graph.heads.fold(DirectedGraph.emptyUnlabeled(), ::traverseCfg)
-    }
 
     override fun newInitialFlow() = FactBox(Fact(
         JTrue,
@@ -240,7 +241,11 @@ fun simplifyTerm(term: JExpression): JExpression {
     return jimpleSimplified
 }
 
-data class PathConditionResult(val method: SootMethod, val condition: JExpression, val branchStatements: Set<Statement>)
+data class PathConditionResult(
+    val method: SootMethod,
+    val condition: JExpression,
+    val branchStatements: Set<Statement>,
+    val asDirectedGraph: () -> DirectedUnlabeledGraph<Unit>)
 
 fun computePathConditions(
     sinkStatement: Unit,
@@ -256,7 +261,7 @@ fun computePathConditions(
             val flowAtSink = result.getFlowBefore(sinkStatement)
             val branchStatements = flowAtSink.content.branchStatements
             val methodCondition = flowAtSink.content.condition
-            PathConditionResult(method, methodCondition, branchStatements)
+            PathConditionResult(method, methodCondition, branchStatements) { result.resultsToDirectedGraph() }
         }
         .filter { it.condition != JTrue } // ignore relevant statements that are reached unconditionally
         .asSequence()

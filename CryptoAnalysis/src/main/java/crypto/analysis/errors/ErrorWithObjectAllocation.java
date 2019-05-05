@@ -36,7 +36,7 @@ public abstract class ErrorWithObjectAllocation extends AbstractError {
 		return objectAllocationLocation.getDataFlowPath();
 	}
 
-	public Set<PathConditionResult> getPathConditions() {
+	public Set<PathConditionResult> computePathConditions() {
 		Set<Statement> relevantStatements = getDataFlowPath().stream().map(Node::stmt).collect(Collectors.toSet());
 
 		return computeRefinedSimplifiedPathConditions(

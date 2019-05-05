@@ -220,7 +220,7 @@ public class ConstraintError extends ErrorWithObjectAllocation{
 	}
 
 	@Override
-	public Set<PathConditionResult> getPathConditions() {
+	public Set<PathConditionResult> computePathConditions() {
 		Set<Statement> relevantStatements = getDataFlowPath().stream().map(Node::stmt).collect(Collectors.toSet());
 		Set<Statement> foreignRelevantStmts = getAllDataFlowPaths().values().stream().map(Node::stmt).collect(Collectors.toSet());
 
