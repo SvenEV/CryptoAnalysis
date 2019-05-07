@@ -16,7 +16,7 @@ import kotlin.test.assertEquals
  */
 data class DataFlow(val relevantLines: List<Int>, val expectedCondition: String)
 
-@Suppress("CanBeVal", "LiftReturnOrAssignment", "ConstantConditionIf", "ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE", "UNUSED_VALUE", "VARIABLE_WITH_REDUNDANT_INITIALIZER")
+@Suppress("CanBeVal", "LiftReturnOrAssignment", "ConstantConditionIf", "ASSIGNED_BUT_NEVER_ACCESSED_VARIABLE", "UNUSED_VALUE", "VARIABLE_WITH_REDUNDANT_INITIALIZER", "MemberVisibilityCanBePrivate")
 class PathConditionsTests : SootBasedTest() {
 
     val c1 = false
@@ -266,5 +266,31 @@ class PathConditionsTests : SootBasedTest() {
         // statements are required. This results in a condition that only covers a subset of
         // the possible scenarios that lead to this data flow.
         DataFlow(listOf(0, 1, 3, 5, 6), "this.c1 && this.c2")
+    )
+
+    // Consider the "D"-flow. If we'd propagate "false"...
+    // (1) after visiting a foreign statement, or
+    // (2) after merging two FOREIGN-branches
+    // ...we'd never get the correct condition "c2", but just "false".
+    private fun mustNotPropagateFalseAfterForeignStatement() {
+        var x = "A"
+
+        if (c1)
+            x = "B"
+        else
+            x = "C"
+
+        if (c2)
+            x = "D"
+
+        Cipher.getInstance(x)
+    }
+
+    @Test
+    fun mustNotPropagateFalseAfterForeignStatementTest() = test(
+        ::mustNotPropagateFalseAfterForeignStatement,
+        DataFlow(listOf(3, 10), "this.c1 && !this.c2"),
+        DataFlow(listOf(5, 10), "!this.c1 && !this.c2"),
+        DataFlow(listOf(8, 10), "this.c2")
     )
 }

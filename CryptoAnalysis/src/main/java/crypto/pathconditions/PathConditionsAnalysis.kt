@@ -113,6 +113,72 @@ enum class BlockUsage {
     }
 }
 
+fun mergeFacts(factsToMerge: List<Fact>): Fact {
+    fun doMerge(left: Fact, right: Fact): Fact {
+        // 'left' and 'right' must belong to the same if
+        assert(left.branchingStack.size() == right.branchingStack.size())
+        assert(left.branchingStack.peek().surroundingIf == right.branchingStack.peek().surroundingIf)
+
+        val leftUsage = left.branchingStack.peek().blockUsage
+        val rightUsage = right.branchingStack.peek().blockUsage
+        val surroundingIf = left.branchingStack.peek().surroundingIf // same as right.branchingStack.peek().surroundingIf
+
+        fun leftOrRight() = Fact(
+            or(left.condition, right.condition),
+            left.branchStatements + right.branchStatements,
+            left.branchingStack.replaceTop(BranchingStackFrame(
+                BlockUsage.max(leftUsage, rightUsage),
+                surroundingIf)))
+
+        return when (leftUsage to rightUsage) {
+            BlockUsage.None to BlockUsage.None -> leftOrRight()
+            BlockUsage.None to BlockUsage.Foreign -> left
+            BlockUsage.None to BlockUsage.Owned -> right
+            BlockUsage.Foreign to BlockUsage.None -> right
+            BlockUsage.Foreign to BlockUsage.Foreign -> leftOrRight()
+            BlockUsage.Foreign to BlockUsage.Owned -> right
+            BlockUsage.Owned to BlockUsage.None -> left
+            BlockUsage.Owned to BlockUsage.Foreign -> left
+            BlockUsage.Owned to BlockUsage.Owned -> leftOrRight()
+            else -> throw Exception() // 'else' required (Kotlin can't prove exhaustion here)
+        }
+    }
+
+    fun popMax(fact: Fact): Fact {
+        val reducedStack = fact.branchingStack.pop()
+        val inner = fact.branchingStack.peek().blockUsage
+        val outer = reducedStack.peek().blockUsage
+        return fact.copy(branchingStack = reducedStack.replaceTop(
+            reducedStack.peek().copy(blockUsage = BlockUsage.max(inner, outer))))
+    }
+
+    // Merging needs to go bottom-up: Facts of innermost ifs are merged first, resulting in a "higher-level" fact
+    // which can then be merged with another one, etc.
+    //
+    // We group facts by their surrounding if-statement (or switch-, in theory) to obtain the correct merging order:
+    // * A group of size >1 represents branches belonging to the same if/switch -- except for the top element, facts in
+    //   the group have the same stack and can be merged into a single fact, reducing stack size by 1.
+    // * A group of size 1 represents one of multiple branches belonging to the same if/switch. However, the other
+    //   branches are still "missing" as they apparently have sub-branches which need to be merged first.
+    var facts = factsToMerge
+    while (facts.size > 1) {
+        facts = facts
+            .groupBy { fact -> fact.branchingStack.peek().surroundingIf }
+            .flatMap { (_, factGroup) ->
+                when (factGroup.size) {
+                    1 -> factGroup // do nothing just yet, we'll get a second fact for this group after some more merging
+                    else -> {
+                        // (since we don't support 'switch' currently, the group size is at most 2)
+                        val merged = factGroup.drop(1).fold(factGroup[0], ::doMerge)
+                        listOf(popMax(merged))
+                    }
+                }
+            }
+    }
+
+    return facts.single()
+}
+
 private class PathConditionsAnalysis(
     graph: UnitGraph,
     private val method: SootMethod,
@@ -171,79 +237,13 @@ private class PathConditionsAnalysis(
         target!!.content = source!!.content
     }
 
-    private fun doMerge(left: Fact, right: Fact): Fact {
-        // 'left' and 'right' must belong to the same if
-        assert(left.branchingStack.size() == right.branchingStack.size())
-        assert(left.branchingStack.peek().surroundingIf == right.branchingStack.peek().surroundingIf)
-
-        val leftUsage = left.branchingStack.peek().blockUsage
-        val rightUsage = right.branchingStack.peek().blockUsage
-        val surroundingIf = left.branchingStack.peek().surroundingIf // same as right.branchingStack.peek().surroundingIf
-
-        fun leftOrRight() = Fact(
-            or(left.condition, right.condition),
-            left.branchStatements + right.branchStatements,
-            left.branchingStack.replaceTop(BranchingStackFrame(
-                BlockUsage.max(leftUsage, rightUsage),
-                surroundingIf)))
-
-        fun neither() = Fact(
-            JFalse,
-            left.branchStatements + right.branchStatements,
-            left.branchingStack.replaceTop(BranchingStackFrame(
-                BlockUsage.max(leftUsage, rightUsage),
-                surroundingIf)))
-
-        return when (leftUsage to rightUsage) {
-            BlockUsage.None to BlockUsage.None -> leftOrRight()
-            BlockUsage.None to BlockUsage.Foreign -> left
-            BlockUsage.None to BlockUsage.Owned -> right
-            BlockUsage.Foreign to BlockUsage.None -> right
-            BlockUsage.Foreign to BlockUsage.Foreign -> neither() // discard both branches (there must be a higher-level alternative path)
-            BlockUsage.Foreign to BlockUsage.Owned -> right
-            BlockUsage.Owned to BlockUsage.None -> left
-            BlockUsage.Owned to BlockUsage.Foreign -> left
-            BlockUsage.Owned to BlockUsage.Owned -> leftOrRight()
-            else -> throw Exception() // 'else' required (Kotlin can't prove exhaustion here)
-        }
-    }
-
-    private fun popMax(fact: Fact): Fact {
-        val reducedStack = fact.branchingStack.pop()
-        val inner = fact.branchingStack.peek().blockUsage
-        val outer = reducedStack.peek().blockUsage
-        return fact.copy(branchingStack = reducedStack.replaceTop(
-            reducedStack.peek().copy(blockUsage = BlockUsage.max(inner, outer))))
-    }
-
     override fun flowThrough(
         input: FactBox,
         stmt: Unit?,
         fallOuts: List<FactBox>?,
         branchOuts: List<FactBox>?
     ) {
-        // First, merge until only one fact remains
-        // ---
-        // Use grouping to obtain facts "belonging" to the same if-statement.
-        // Merging goes bottom-up: Facts of innermost ifs are merged first, resulting in a "higher-level" fact
-        // which can then be merged with another one, etc.
-        var facts = input.content.toList()
-        while (facts.size > 1) {
-            facts = facts
-                .groupBy { fact -> fact.branchingStack.peek().surroundingIf }
-                .flatMap { (_, factGroup) ->
-                    when (factGroup.size) {
-                        1 -> factGroup // do nothing just yet, we'll get a second fact for this group after some more merging
-                        else -> {
-                            // (since we don't support 'switch' currently, the group size is at most 2)
-                            val merged = factGroup.drop(1).fold(factGroup[0], ::doMerge)
-                            listOf(popMax(merged))
-                        }
-                    }
-                }
-        }
-
-        val fact = facts.single()
+        val fact = mergeFacts(input.content)
 
         return when (stmt) {
             is IfStmt -> {
@@ -269,16 +269,8 @@ private class PathConditionsAnalysis(
 
                 val currentFrame = fact.branchingStack.peek()
                 val usageToPropagate = BlockUsage.max(currentFrame.blockUsage, stmtUsage)
-                val conditionToPropagate = when (usageToPropagate) {
-                    BlockUsage.Foreign -> JFalse
-                    else -> fact.condition
-                }
-                val newFacts = ImmutableList.of(
-                    fact.copy(
-                        condition = conditionToPropagate,
-                        branchingStack = fact.branchingStack.replaceTop(currentFrame.copy(blockUsage = usageToPropagate))
-                    )
-                )
+                val newStack = fact.branchingStack.replaceTop(currentFrame.copy(blockUsage = usageToPropagate))
+                val newFacts = ImmutableList.of(fact.copy(branchingStack = newStack))
 
                 if (stmt!!.branches()) {
                     if (branchOuts!!.any())
@@ -320,9 +312,9 @@ fun computePathConditions(
         .map { (method, _) ->
             val cfg = ExceptionalUnitGraph(method.activeBody)
             val result = PathConditionsAnalysis(cfg, method, relevantStatements, foreignRelevantStatements)
-            val flowAtSink = result.getFlowBefore(sinkStatement)
-            val branchStatements = flowAtSink?.content?.single()?.branchStatements ?: emptySet()
-            val methodCondition = flowAtSink?.content?.single()?.condition ?: JTrue
+            val flowAtSink = mergeFacts(result.getFlowBefore(sinkStatement).content)
+            val branchStatements = flowAtSink.branchStatements ?: emptySet()
+            val methodCondition = flowAtSink.condition ?: JTrue
             PathConditionResult(method, methodCondition, branchStatements) { result.resultsToDirectedGraph() }
         }
         .filter { it.condition != JTrue } // ignore relevant statements that are reached unconditionally
