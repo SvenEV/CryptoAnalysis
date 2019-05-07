@@ -312,4 +312,48 @@ class PathConditionsTests : SootBasedTest() {
         DataFlow(listOf(0, 2, 5), "this.c1 && !this.c2"),
         DataFlow(listOf(4, 5), "this.c2")
     )
+
+    private fun covaIndirectConcrete1(d: Int) {
+        var a = 0
+        if (d == 2) {
+            a = 1
+        }
+        if (d == 3) {
+            a = 2
+        }
+        var e = 0
+        if (a >= 0) {
+            e = 1
+        } else {
+            e = 2
+        }
+        if (a < 2) {
+            e = 3
+        }
+        nop()
+    }
+
+    @Test
+    fun covaIndirectConcrete1Test() = test(
+        ::covaIndirectConcrete1,
+        DataFlow(listOf(9, 16), "a >= 0L && a >= 2L"),
+        DataFlow(listOf(11, 16), "0L > a && a >= 2L"),
+        DataFlow(listOf(14, 16), "2L > a")
+    )
+
+    fun covaInfeasible1(b: Boolean) {
+        if (b) {
+            println()
+            val a = !b
+            if (a) {
+                nop()
+            }
+        }
+    }
+
+    @Test
+    fun covaInfeasible1Test() = test(
+        ::covaInfeasible1,
+        DataFlow(listOf(4), "false")
+    )
 }

@@ -47,14 +47,15 @@ fun Value.prettyPrint(replacements: Map<JimpleLocal, Value> = emptyMap()): Strin
     is CastExpr -> "(${castType.prettyPrint()}) ${op.prettyPrint(replacements)}"
     is BinopExpr -> {
         val default = "${op1.prettyPrint(replacements)} ${symbol.trim()} ${op2.prettyPrint(replacements)}"
-        if (op1.type === BooleanType.v())
-            if (op2 is IntConstant)
-                when ((op2 as IntConstant).value) {
-                    0 -> "!" + op1.prettyPrint(replacements)
-                    1 -> op1.prettyPrint(replacements)
-                    else -> default
-                }
-            else default
+        if (op1.type === BooleanType.v() && op2 is IntConstant) {
+            when (symbol.trim() to (op2 as IntConstant).value) {
+                "==" to 0 -> "!" + op1.prettyPrint(replacements)
+                "==" to 1 -> op1.prettyPrint(replacements)
+                "!=" to 0 -> op1.prettyPrint(replacements)
+                "!=" to 1 -> "!" + op1.prettyPrint(replacements)
+                else -> default
+            }
+        }
         else default
     }
     else -> toString()
