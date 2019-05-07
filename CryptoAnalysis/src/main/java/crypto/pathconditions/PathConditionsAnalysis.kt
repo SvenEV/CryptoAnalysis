@@ -122,12 +122,15 @@ fun mergeFacts(factsToMerge: List<Fact>): Fact {
 
         val leftUsage = left.branchingStack.peek().blockUsage
         val rightUsage = right.branchingStack.peek().blockUsage
+        val surroundingIf = left.branchingStack.peek().surroundingIf // same as right.branchingStack.peek().surroundingIf
 
         fun leftOrRight() = Fact(
             left.foundSource || right.foundSource,
             or(left.condition, right.condition),
             left.branchStatements + right.branchStatements,
-            left.branchingStack) // same as right.branchingStack here
+            left.branchingStack.replaceTop(BranchingStackFrame(
+                BlockUsage.max(leftUsage, rightUsage),
+                surroundingIf)))
 
         if (!left.foundSource && !right.foundSource) {
             // We haven't reached the source of the data flow of interest yet,

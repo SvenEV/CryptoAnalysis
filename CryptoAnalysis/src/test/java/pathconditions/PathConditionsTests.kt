@@ -312,7 +312,4 @@ class PathConditionsTests : SootBasedTest() {
         DataFlow(listOf(0, 2, 5), "this.c1 && !this.c2"),
         DataFlow(listOf(4, 5), "this.c2")
     )
-
-    // TODO: Shouldn't we behave differently if the source-statement of the data flow is not even reached yet?
-    // Only start discarding branches when source is reached?
 }
