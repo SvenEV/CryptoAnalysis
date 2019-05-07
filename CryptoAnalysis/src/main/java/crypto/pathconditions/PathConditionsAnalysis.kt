@@ -82,6 +82,7 @@ data class BranchingStackFrame(
 )
 
 data class Fact(
+    val foundSource: Boolean,
     val condition: JExpression,
     val branchStatements: Set<Statement>, // the if-statements the condition was constructed from
     val branchingStack: ImmutableStack<BranchingStackFrame>) // stack head represents the closest (i.e. innermost) if-statement relative to the current statement
@@ -123,21 +124,28 @@ fun mergeFacts(factsToMerge: List<Fact>): Fact {
         val rightUsage = right.branchingStack.peek().blockUsage
 
         fun leftOrRight() = Fact(
+            left.foundSource || right.foundSource,
             or(left.condition, right.condition),
             left.branchStatements + right.branchStatements,
             left.branchingStack) // same as right.branchingStack here
 
-        return when (leftUsage to rightUsage) {
-            BlockUsage.None to BlockUsage.None -> leftOrRight()
-            BlockUsage.None to BlockUsage.Foreign -> left
-            BlockUsage.None to BlockUsage.Owned -> right
-            BlockUsage.Foreign to BlockUsage.None -> right
-            BlockUsage.Foreign to BlockUsage.Foreign -> leftOrRight()
-            BlockUsage.Foreign to BlockUsage.Owned -> right
-            BlockUsage.Owned to BlockUsage.None -> left
-            BlockUsage.Owned to BlockUsage.Foreign -> left
-            BlockUsage.Owned to BlockUsage.Owned -> leftOrRight()
-            else -> throw Exception() // 'else' required (Kotlin can't prove exhaustion here)
+        if (!left.foundSource && !right.foundSource) {
+            // We haven't reached the source of the data flow of interest yet,
+            // so no need to discard any branches
+            return leftOrRight()
+        } else {
+            return when (leftUsage to rightUsage) {
+                BlockUsage.None to BlockUsage.None -> leftOrRight()
+                BlockUsage.None to BlockUsage.Foreign -> left
+                BlockUsage.None to BlockUsage.Owned -> right
+                BlockUsage.Foreign to BlockUsage.None -> right
+                BlockUsage.Foreign to BlockUsage.Foreign -> leftOrRight()
+                BlockUsage.Foreign to BlockUsage.Owned -> right
+                BlockUsage.Owned to BlockUsage.None -> left
+                BlockUsage.Owned to BlockUsage.Foreign -> left
+                BlockUsage.Owned to BlockUsage.Owned -> leftOrRight()
+                else -> throw Exception() // 'else' required (Kotlin can't prove exhaustion here)
+            }
         }
     }
 
@@ -213,6 +221,9 @@ private class PathConditionsAnalysis(
                                     getFallFlowAfter(u)
                             }.content.single()
 
+                        if (!fact.foundSource)
+                            fontColor("#a0a0a0")
+
                         val condition = simplifyTerm(refine(fact.condition)).toString(ContextFormat.ContextFree)
                         val stack = fact.branchingStack.asSequence().map { it.blockUsage }.toList()
                         label("$condition\n$stack")
@@ -222,6 +233,7 @@ private class PathConditionsAnalysis(
 
     override fun newInitialFlow() = FactBox(ImmutableList.of(
         Fact(
+            false,
             JTrue,
             emptySet(),
             ImmutableStack.emptyStack<BranchingStackFrame>().push(BranchingStackFrame(BlockUsage.None, null)))))
@@ -250,8 +262,8 @@ private class PathConditionsAnalysis(
 
                 val newStack = fact.branchingStack.push(BranchingStackFrame(BlockUsage.None, stmt))
                 val newBranchStatements = fact.branchStatements + Statement(stmt as Stmt, method)
-                val trueFact = Fact(trueCondition, newBranchStatements, newStack)
-                val falseFact = Fact(falseCondition, newBranchStatements, newStack)
+                val trueFact = Fact(fact.foundSource, trueCondition, newBranchStatements, newStack)
+                val falseFact = Fact(fact.foundSource, falseCondition, newBranchStatements, newStack)
 
                 branchOuts!![0].content = ImmutableList.of(trueFact)
                 fallOuts!![0].content = ImmutableList.of(falseFact)
@@ -267,7 +279,9 @@ private class PathConditionsAnalysis(
                 val currentFrame = fact.branchingStack.peek()
                 val usageToPropagate = BlockUsage.max(currentFrame.blockUsage, stmtUsage)
                 val newStack = fact.branchingStack.replaceTop(currentFrame.copy(blockUsage = usageToPropagate))
-                val newFacts = ImmutableList.of(fact.copy(branchingStack = newStack))
+                val newFacts = ImmutableList.of(Fact(
+                    fact.foundSource || stmtUsage == BlockUsage.Owned,
+                    fact.condition, fact.branchStatements, newStack))
 
                 if (stmt!!.branches()) {
                     if (branchOuts!!.any())

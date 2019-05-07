@@ -33,6 +33,7 @@ class EdgeConfiguration {
     val attrs = mutableMapOf<String, String>()
     fun label(s: String) = attrs.put("label", s)
     fun color(s: String) = attrs.put("color", s)
+    fun fontColor(s: String) = attrs.put("fontcolor", s)
     fun invisible() = attrs.put("style", "invis")
     fun dashed() = attrs.put("style", "dashed")
     fun dotted() = attrs.put("style", "dotted")

@@ -293,4 +293,26 @@ class PathConditionsTests : SootBasedTest() {
         DataFlow(listOf(5, 10), "!this.c1 && !this.c2"),
         DataFlow(listOf(8, 10), "this.c2")
     )
+
+    // Consider the "B"-flow. Even though the "c1"-branch contains a foreign statement,
+    // we shouldn't discard it because at that point we haven't even visited the source
+    // of the "B"-flow yet and what happens before the source doesn't matter.
+    private fun lateSource() {
+        var x = "A"
+        if (c1)
+            nop()
+        if (c2)
+            x = "B"
+        Cipher.getInstance(x)
+    }
+
+    @Test
+    fun lateSourceTest() = test(
+        ::lateSource,
+        DataFlow(listOf(0, 2, 5), "this.c1 && !this.c2"),
+        DataFlow(listOf(4, 5), "this.c2")
+    )
+
+    // TODO: Shouldn't we behave differently if the source-statement of the data flow is not even reached yet?
+    // Only start discarding branches when source is reached?
 }
