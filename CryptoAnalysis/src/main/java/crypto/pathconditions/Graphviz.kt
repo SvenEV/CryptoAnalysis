@@ -72,6 +72,9 @@ class DirectedGraph<N, E>(
         return DirectedGraph(newNodes, _edges + Pair(id, Edge(id, start, end, attributes)))
     }
 
+    fun addNode(id: N): DirectedGraph<N, E> =
+        DirectedGraph(_nodes.ensureNodeExists(id), _edges)
+
     fun removeNode(id: N): DirectedGraph<N, E> {
         val newEdges = _edges.filterValues { it.start != id && it.end != id }
         return DirectedGraph(_nodes - id, newEdges)
@@ -89,6 +92,9 @@ class DirectedGraph<N, E>(
     fun node(id: N) = _nodes[id]
     fun edge(id: E) = _edges[id]
 
+    fun containsNode(id: N) = _nodes.containsKey(id)
+    fun containsEdge(id: E) = _edges.containsKey(id)
+
     fun nodeAttribute(id: N, key: String) = _nodes[id]?.attributes?.get(key)
     fun edgeAttribute(id: E, key: String) = _edges[id]?.attributes?.get(key)
 
@@ -96,10 +102,10 @@ class DirectedGraph<N, E>(
      * Applies attributes to a node (new attributes are merged with existing ones, if any).
      */
     fun configureNode(id: N, f: NodeConfiguration.() -> kotlin.Unit): DirectedGraph<N, E> {
-        val node = _nodes[id]
+        val node = _nodes[id] ?: throw IllegalStateException("The graph does not contain the node '$id'")
         val config = NodeConfiguration()
         f(config)
-        val newNode = node?.copy(attributes = node.attributes + config.attrs) ?: Node(id, config.attrs.toMap())
+        val newNode = node.copy(attributes = node.attributes + config.attrs)
         return DirectedGraph(_nodes + (id to newNode), _edges)
     }
 
@@ -107,14 +113,11 @@ class DirectedGraph<N, E>(
      * Applies attributes to an edge (new attributes are merged with existing ones, if any).
      */
     fun configureEdge(id: E, f: EdgeConfiguration.() -> kotlin.Unit): DirectedGraph<N, E> {
-        val edge = _edges[id]
-        if (edge != null) {
-            val config = EdgeConfiguration()
-            f(config)
-            val newEdge = edge.copy(attributes = edge.attributes + config.attrs)
-            return DirectedGraph(_nodes, _edges + (id to newEdge))
-        }
-        return this
+        val edge = _edges[id] ?: throw IllegalStateException("The graph does not contain the edge '$id'")
+        val config = EdgeConfiguration()
+        f(config)
+        val newEdge = edge.copy(attributes = edge.attributes + config.attrs)
+        return DirectedGraph(_nodes, _edges + (id to newEdge))
     }
 
     /**
@@ -215,18 +218,23 @@ fun buildGraph(
     onEdge: (Unit, Unit, DirectedUnlabeledGraph<Unit>) -> DirectedUnlabeledGraph<Unit> = { _, _, g -> g })
     : DirectedUnlabeledGraph<Unit> {
 
+    if (graph.containsNode(stmt))
+        return graph // Prevent infinite loop on cycle
+
     fun resolveGoto(u: Unit): Unit = when (u) {
         is GotoStmt -> resolveGoto(u.target)
         else -> u
     }
 
+    // Recursively build the "subtree" from 'stmt' to its successors
     val succs = getSuccsOf(stmt).map(::resolveGoto)
-    val newGraph = succs.fold(graph) { g, succ ->
+    val newGraph = succs.fold(graph.addNode(stmt)) { g, succ ->
         buildGraph(succ, g, getSuccsOf, onNode, onEdge)
             .addEdge(stmt to succ)
             .let { onEdge(stmt, succ, it) }
     }
 
+    // Apply styling
     return when (stmt) {
         is IfStmt -> {
             val trueTargets = resolveGoto(stmt.target)

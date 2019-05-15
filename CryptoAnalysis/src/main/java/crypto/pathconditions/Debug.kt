@@ -65,7 +65,7 @@ fun Unit.prettyPrint(replacements: Map<JimpleLocal, Value> = emptyMap()): String
     is AssignStmt -> "${leftOp.prettyPrint(replacements)} = ${rightOp.prettyPrint(replacements)}"
     is InvokeStmt -> invokeExpr.prettyPrint(replacements)
     is IfStmt -> "if (${condition.prettyPrint(replacements)})"
-    is GotoStmt -> "goto `${target.prettyPrint(replacements)}`"
+    is GotoStmt -> "goto `${if (target == this) "<self>" else target.prettyPrint(replacements)}`"
     else -> toString()
 }
 

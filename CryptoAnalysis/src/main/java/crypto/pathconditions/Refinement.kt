@@ -179,6 +179,8 @@ fun refine(expr: JExpression): JExpression =
         throw Exception("Failed to refine '$expr'", e)
     }
 
+fun JExpression.refined() = refine(this)
+
 fun refineStatementToString(stmt: Stmt, method: SootMethod) {
     val context = ProgramContext(stmt, method)
     when (stmt) {

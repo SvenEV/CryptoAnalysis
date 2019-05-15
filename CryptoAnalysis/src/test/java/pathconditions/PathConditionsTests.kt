@@ -62,6 +62,8 @@ class PathConditionsTests : SootBasedTest() {
                 .map { it.condition.toString(ContextFormat.ContextFree) }
                 .singleOrNull() ?: "true"
 
+            val dot = conditions.first().asDirectedGraph().toDotString()
+
             assertEquals(flow.expectedCondition, conditionsAsString,
                 "Actual path conditions do not match expected ones")
         }
@@ -341,7 +343,7 @@ class PathConditionsTests : SootBasedTest() {
         DataFlow(listOf(14, 16), "2L > a")
     )
 
-    fun covaInfeasible1(b: Boolean) {
+    private fun covaInfeasible1(b: Boolean) {
         if (b) {
             println()
             val a = !b
@@ -355,5 +357,57 @@ class PathConditionsTests : SootBasedTest() {
     fun covaInfeasible1Test() = test(
         ::covaInfeasible1,
         DataFlow(listOf(4), "false")
+    )
+
+
+    private fun loop() {
+        var x = "A"
+        for (i in 0..10) {
+            while (c1) {
+                x = "B"
+            }
+            nop()
+        }
+        Cipher.getInstance(x)
+    }
+
+    @Test
+    fun loopTest() = test(
+        ::loop,
+        DataFlow(listOf(0, 7), "i > 10L"), // For "A", just skipping the outer loop is one of the valid paths
+        DataFlow(listOf(3, 7), "false") // For "B" both must hold, 'c1' (to execute 'x = "B"') and '!c1' (to reach sink)
+    )
+
+    private fun loopWithSinkInsideLoop() {
+        var x = "A"
+        for (i in 0..10) {
+            while (c1) {
+                x = "B"
+            }
+            Cipher.getInstance(x)
+        }
+    }
+
+    @Test
+    fun loopWithSinkInsideLoopTest() = test(
+        ::loopWithSinkInsideLoop,
+        DataFlow(listOf(0, 5), "i <= 10L && !this.c1"),
+        DataFlow(listOf(3, 5), "false")
+    )
+
+    private fun nestedForeign() {
+        var x = "A"
+        if (c1) {
+            if (c2)
+                x = "B"
+        }
+        Cipher.getInstance(x)
+    }
+
+    @Test
+    fun nestedForeignTest() = test(
+        ::nestedForeign,
+        DataFlow(listOf(0, 5), "!this.c1 || !this.c2"),
+        DataFlow(listOf(3, 5), "this.c1 && this.c2")
     )
 }
