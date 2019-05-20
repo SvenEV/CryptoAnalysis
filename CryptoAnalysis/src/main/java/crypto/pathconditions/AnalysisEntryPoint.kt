@@ -35,7 +35,6 @@ fun computeRefinedSimplifiedPathConditions(
                 throw Exception("Failed to refine or simplify '${it.condition}' from method '${it.method.name}'.${System.lineSeparator()}${it.method.prettyPrint()}", ex)
             }
         }
-        .filter { it.condition !is JTrue } // ignore TRUE conditions
         .toSet()
 
 fun pathConditionsAnalysisTransformer(createQuery: () -> PathConditionsQuery) = object : SceneTransformer() {
