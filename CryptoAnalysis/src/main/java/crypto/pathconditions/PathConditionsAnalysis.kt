@@ -5,10 +5,7 @@ import com.google.common.collect.ImmutableList
 import com.microsoft.z3.BoolExpr
 import crypto.pathconditions.debug.prettyPrint
 import crypto.pathconditions.expressions.*
-import crypto.pathconditions.graphviz.DirectedGraph
-import crypto.pathconditions.graphviz.DirectedUnlabeledGraph
-import crypto.pathconditions.graphviz.addEdge
-import crypto.pathconditions.graphviz.buildGraph
+import crypto.pathconditions.graphviz.*
 import crypto.pathconditions.refinement.refined
 import crypto.pathconditions.z3.createSolver
 import crypto.pathconditions.z3.decode
@@ -284,7 +281,7 @@ private class PathConditionsAnalysis(
                         val fact =
                             when (u) {
                                 is IfStmt ->
-                                    if (succ == u.target)
+                                    if (succ == resolveGoto(u.target))
                                         getBranchFlowAfter(u).single()
                                     else
                                         getFallFlowAfter(u)

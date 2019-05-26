@@ -210,6 +210,11 @@ private fun AbstractJimpleBasedICFG.getReconstructedSuccsOf(
         sequenceOf(it)
     }
 
+fun resolveGoto(u: Unit): Unit = when (u) {
+    is GotoStmt -> resolveGoto(u.target)
+    else -> u
+}
+
 fun buildGraph(
     stmt: Unit,
     graph: DirectedUnlabeledGraph<Unit>,
@@ -220,11 +225,6 @@ fun buildGraph(
 
     if (graph.containsNode(stmt))
         return graph // Prevent infinite loop on cycle
-
-    fun resolveGoto(u: Unit): Unit = when (u) {
-        is GotoStmt -> resolveGoto(u.target)
-        else -> u
-    }
 
     // Recursively build the "subtree" from 'stmt' to its successors
     val succs = getSuccsOf(stmt).map(::resolveGoto)
