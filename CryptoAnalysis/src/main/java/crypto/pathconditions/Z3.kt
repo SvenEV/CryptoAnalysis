@@ -323,9 +323,10 @@ private fun Z3Solver.decodeValue(expr: Expr): JExpression = when {
 
 fun Z3Solver.decode(expr: Expr): JExpression =
     try {
+        // TODO: Make more operators support >2 arguments
         when {
-            expr.isAnd -> JAnd(decode(expr.args[0]), decode(expr.args[1]))
-            expr.isOr -> JOr(decode(expr.args[0]), decode(expr.args[1]))
+            expr.isAnd -> expr.args.map(::decode).fold(JTrue, ::and)
+            expr.isOr -> expr.args.map(::decode).fold(JFalse, ::or)
             expr.isEq -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JEquals)
             expr.isNot && expr.args[0].isEq -> JCondition(decode(expr.args[0].args[0]), decode(expr.args[0].args[1]), JNotEquals)
             expr.isGT || expr.isFPGT -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JGreaterThan)
