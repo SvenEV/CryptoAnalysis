@@ -109,7 +109,19 @@ enum class BlockUsage {
             else -> throw Exception() // 'else' required (Kotlin can't prove exhaustion here)
         }
 
-        fun max(vararg a: BlockUsage) = a.fold(None, ::max)
+        /** Returns the secondary maximum of two [BlockUsage] ([Foreign] \prec [None] \prec [Included]) */
+        fun max2(x: BlockUsage, y: BlockUsage) = when (x to y) {
+            None to None -> None
+            None to Foreign -> None
+            None to Owned -> Owned
+            Foreign to None -> None
+            Foreign to Foreign -> Foreign
+            Foreign to Owned -> Owned
+            Owned to None -> Owned
+            Owned to Foreign -> Owned
+            Owned to Owned -> Owned
+            else -> throw Exception() // 'else' required (Kotlin can't prove exhaustion here)
+        }
     }
 }
 
@@ -132,7 +144,7 @@ fun mergeFacts(factsToMerge: List<Fact>, stmt: Unit, isLoop: Boolean): Fact {
             or(left.condition, right.condition).refined().simplified(),
             left.branchStatements + right.branchStatements,
             left.branchingStack.replaceTop(BranchingStackFrame(
-                BlockUsage.max(leftUsage, rightUsage),
+                BlockUsage.max2(leftUsage, rightUsage),
                 surroundingIf)))
 
         if (!left.foundSource && !right.foundSource) {
