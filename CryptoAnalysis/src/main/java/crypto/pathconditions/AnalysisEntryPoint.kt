@@ -4,13 +4,11 @@ import boomerang.jimple.Statement
 import boomerang.preanalysis.BoomerangPretransformer
 import crypto.pathconditions.boomerang.extractRelevantStatements
 import crypto.pathconditions.debug.prettyPrint
-import crypto.pathconditions.expressions.JTrue
-import crypto.pathconditions.refinement.refine
+import crypto.pathconditions.refinement.refined
 import soot.PackManager
 import soot.SceneTransformer
 import soot.Transform
 import soot.Unit
-import java.lang.Exception
 
 /**
  * A (temporary) entry point to perform all steps of the analysis
@@ -30,7 +28,7 @@ fun computeRefinedSimplifiedPathConditions(
     computePathConditions(sinkStatement, relevantStatements, foreignRelevantStatements)
         .map {
             try {
-                it.copy(condition = simplifyTerm(refine(it.condition)))
+                it.copy(condition = it.condition.refined().simplified())
             } catch (ex: Exception) {
                 throw Exception("Failed to refine or simplify '${it.condition}' from method '${it.method.name}'.${System.lineSeparator()}${it.method.prettyPrint()}", ex)
             }

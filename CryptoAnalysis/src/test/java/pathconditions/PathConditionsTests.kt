@@ -158,8 +158,8 @@ class PathConditionsTests : SootBasedTest() {
     @Test
     fun multiFlow1Test() = test(
         ::multiFlow1,
-        DataFlow(listOf(2, 3), "Math.random() < 0.5"),
-        DataFlow(listOf(0, 3), "0.5 <= Math.random()")
+        DataFlow(listOf(2, 3), "0.5 > Math.random()"),
+        DataFlow(listOf(0, 3), "Math.random() >= 0.5")
     )
 
     private fun multiFlow2() {
@@ -173,8 +173,8 @@ class PathConditionsTests : SootBasedTest() {
     @Test
     fun multiFlow2Test() = test(
         ::multiFlow2,
-        DataFlow(listOf(0, 3, 4), "Math.random() < 0.5"),
-        DataFlow(listOf(1, 4), "0.5 <= Math.random()")
+        DataFlow(listOf(0, 3, 4), "0.5 > Math.random()"),
+        DataFlow(listOf(1, 4), "Math.random() >= 0.5")
     )
 
     private fun multiFlow3() {
@@ -188,8 +188,8 @@ class PathConditionsTests : SootBasedTest() {
     @Test
     fun multiFlow3Test() = test(
         ::multiFlow3,
-        DataFlow(listOf(0, 1, 4), "0.5 <= Math.random()"),
-        DataFlow(listOf(1, 3, 4), "Math.random() < 0.5")
+        DataFlow(listOf(0, 1, 4), "Math.random() >= 0.5"),
+        DataFlow(listOf(1, 3, 4), "0.5 > Math.random()")
     )
 
     private fun merge1() {

@@ -1,11 +1,12 @@
 package crypto.pathconditions.z3
 
-import crypto.pathconditions.expressions.*
-import com.google.common.cache.*
+import com.google.common.cache.CacheBuilder
+import com.google.common.cache.CacheLoader
+import com.google.common.cache.LoadingCache
 import com.microsoft.z3.*
 import com.microsoft.z3.Context
 import com.microsoft.z3.Expr
-import com.microsoft.z3.enumerations.Z3_decl_kind
+import crypto.pathconditions.expressions.*
 import soot.*
 import soot.jimple.*
 
@@ -22,7 +23,6 @@ data class Z3Solver(
     val falseExpr: BoolExpr,
     val nullSymbol: Symbol,
     val objSort: Sort,
-    val floatSort: FPSort,
     val cache: LoadingCache<BoolExpr, Status> // TODO: populate cache
 )
 
@@ -34,7 +34,6 @@ fun createSolver(): Z3Solver {
         solver.check()
     })
     val objSort = context.mkUninterpretedSort("Object")
-    val floatSort = context.mkFPSortDouble()
     return Z3Solver(
         context,
         mutableMapOf(),
@@ -42,7 +41,6 @@ fun createSolver(): Z3Solver {
         context.mkFalse(),
         context.mkSymbol("null"),
         objSort,
-        floatSort,
         cache
     )
 }
@@ -104,8 +102,8 @@ private fun Z3Solver.encodeType(t: Type) = when {
     t == ShortType.v() -> context.intSort
     t == ByteType.v() -> context.intSort
     t == CharType.v() -> context.intSort
-    t == FloatType.v() -> floatSort
-    t == DoubleType.v() -> floatSort
+    t == FloatType.v() -> context.realSort
+    t == DoubleType.v() -> context.realSort
     t.toString() == "java.lang.String" -> context.stringSort
     else -> objSort
 }
@@ -145,23 +143,6 @@ private fun Z3Solver.tryEncodeWellKnownStaticCall(expr: JStaticInvoke): Expr? = 
     else -> null
 }
 
-/** Helper function that produces either an integer or a floating point operation, depending on the sort of operands */
-private fun Context.mkArithOrFPOp(
-    arithOp: (Array<ArithExpr>) -> ArithExpr,
-    fpOp: (FPRMExpr, FPExpr, FPExpr) -> FPExpr
-) = { left: Expr, right: Expr ->
-    when {
-        left is ArithExpr && right is ArithExpr -> arithOp(arrayOf(left, right))
-        left is FPExpr && right is FPExpr -> fpOp(mkFPRoundNearestTiesToEven(), left, right) // TODO: Extract constant
-        else -> throw IllegalArgumentException("Can't combine expressions of type '${left.javaClass.name}' and '${right.javaClass.name}'")
-    }
-}
-
-private val Context.mkAddOrFPAdd get() = mkArithOrFPOp(::mkAdd, ::mkFPAdd)
-private val Context.mkSubOrFPSub get() = mkArithOrFPOp(::mkSub, ::mkFPSub)
-private val Context.mkMulOrFPMul get() = mkArithOrFPOp(::mkMul, ::mkFPMul)
-private val Context.mkDivOrFPDiv get() = mkArithOrFPOp({ ops -> mkDiv(ops[0], ops[1]) }, ::mkFPDiv)
-
 /**
  * Recursively translates a JExpression to a Z3 boolean expression.
  * Some expressions cannot be mapped to Z3 properly, including e.g. method calls and instanceof-expressions.
@@ -183,23 +164,23 @@ fun Z3Solver.encode(expr: JExpression, expectedSort: Sort): Expr =
                 encode(expr.left, context.boolSort) as BoolExpr,
                 encode(expr.right, context.boolSort) as BoolExpr
             )
-            is JAdd -> context.mkAddOrFPAdd(
-                encode(expr.left, expectedSort),
-                encode(expr.right, expectedSort)
+            is JAdd -> context.mkAdd(
+                encode(expr.left, expectedSort) as ArithExpr,
+                encode(expr.right, expectedSort) as ArithExpr
             )
-            is JSubtract -> context.mkSubOrFPSub(
-                encode(expr.left, expectedSort),
-                encode(expr.right, expectedSort)
+            is JSubtract -> context.mkSub(
+                encode(expr.left, expectedSort) as ArithExpr,
+                encode(expr.right, expectedSort) as ArithExpr
             )
             // TODO: Can we guarantee that Z3 calculates exactly like Java? Otherwise, Z3 might simplify something to
             // TODO: true or false which Java would not do at runtime. Soundness at risk!
-            is JMultiply -> context.mkMulOrFPMul(
-                encode(expr.left, expectedSort),
-                encode(expr.right, expectedSort)
+            is JMultiply -> context.mkMul(
+                encode(expr.left, expectedSort) as ArithExpr,
+                encode(expr.right, expectedSort) as ArithExpr
             )
-            is JDivide -> context.mkDivOrFPDiv(
-                encode(expr.left, expectedSort),
-                encode(expr.right, expectedSort)
+            is JDivide -> context.mkDiv(
+                encode(expr.left, expectedSort) as ArithExpr,
+                encode(expr.right, expectedSort) as ArithExpr
             )
             is JRemainder -> context.mkRem(
                 encode(expr.left, expectedSort) as IntExpr,
@@ -207,22 +188,15 @@ fun Z3Solver.encode(expr: JExpression, expectedSort: Sort): Expr =
             )
             is JCondition -> {
                 val expectedOpSort = getExpectedSort(expr.left.type, expr.right.type)
-                val isFP = expectedOpSort == floatSort
                 val op1 = encode(expr.left, expectedOpSort)
                 val op2 = encode(expr.right, expectedOpSort)
                 when {
                     expr.symbol is JEquals -> context.mkEq(op1, op2)
                     expr.symbol is JNotEquals -> context.mkNot(context.mkEq(op1, op2))
-
-                    isFP && expr.symbol is JGreaterThan -> context.mkFPGt(op1 as FPExpr, op2 as FPExpr)
-                    isFP && expr.symbol is JGreaterOrEqual -> context.mkFPGEq(op1 as FPExpr, op2 as FPExpr)
-                    isFP && expr.symbol is JLessThan -> context.mkFPLt(op1 as FPExpr, op2 as FPExpr)
-                    isFP && expr.symbol is JLessOrEqual -> context.mkFPLEq(op1 as FPExpr, op2 as FPExpr)
-
-                    expr.symbol is JGreaterThan -> context.mkGt(op1 as IntExpr, op2 as IntExpr)
-                    expr.symbol is JGreaterOrEqual -> context.mkGe(op1 as IntExpr, op2 as IntExpr)
-                    expr.symbol is JLessThan -> context.mkLt(op1 as IntExpr, op2 as IntExpr)
-                    expr.symbol is JLessOrEqual -> context.mkLe(op1 as IntExpr, op2 as IntExpr)
+                    expr.symbol is JGreaterThan -> context.mkGt(op1 as ArithExpr, op2 as ArithExpr)
+                    expr.symbol is JGreaterOrEqual -> context.mkGe(op1 as ArithExpr, op2 as ArithExpr)
+                    expr.symbol is JLessThan -> context.mkLt(op1 as ArithExpr, op2 as ArithExpr)
+                    expr.symbol is JLessOrEqual -> context.mkLe(op1 as ArithExpr, op2 as ArithExpr)
 
                     else -> TODO("Can't happen")
                 }
@@ -238,12 +212,12 @@ fun Z3Solver.encode(expr: JExpression, expectedSort: Sort): Expr =
                     is IntConstant -> when (expectedSort) {
                         context.intSort -> context.mkInt(const.value)
                         context.boolSort -> intToBool(const.value)
-                        floatSort -> context.mkFP(const.value, floatSort)
+                        context.realSort -> context.mkReal(const.value)
                         else -> throw IllegalArgumentException("Unexpected 'expectedSort == $expectedSort' when encoding int constant")
                     }
                     is LongConstant -> context.mkInt(const.value)
-                    is FloatConstant -> context.mkFP(const.value, floatSort)
-                    is DoubleConstant -> context.mkFP(const.value, floatSort)
+                    is FloatConstant -> context.mkReal(const.value.toString())
+                    is DoubleConstant -> context.mkReal(const.value.toString())
                     is StringConstant -> context.mkString(const.value)
                     else -> TODO("Missing case for ${expr.value.javaClass.name}")
                 }
@@ -257,8 +231,8 @@ fun Z3Solver.encode(expr: JExpression, expectedSort: Sort): Expr =
             is JCast -> {
                 val v = encode(expr.expr, expectedSort)
                 when {
-                    v is IntNum && expectedSort == floatSort -> context.mkFP(v.int, floatSort)
-                    v is FPNum && expectedSort == context.intSort -> TODO("context.mkInt(v.???)...")
+                    v is IntNum && expectedSort == context.realSort -> context.mkReal(v.int)
+                    v is RatNum && expectedSort == context.intSort -> TODO("context.mkInt(???)")
                     else -> v
                 }
             }
@@ -300,14 +274,12 @@ private fun Z3Solver.intToBool(v: Int) = when (v) {
 //
 
 private fun Z3Solver.decodeValue(expr: Expr): JExpression = when {
-    expr.isIntNum ->
+    expr is IntNum ->
         // TODO: Choose int or long on Z3-decode?
         //JConstant(IntConstant.v(Integer.parseInt(expr.toString())))
-        JConstant(LongConstant.v(expr.toString().toLong()))
-    expr.isFloatNum -> {
-        val v = constructDouble(expr as FPNum)
-        JConstant(DoubleConstant.v(v))
-    }
+        JConstant(LongConstant.v(expr.int64))
+    expr is RatNum ->
+        JConstant(DoubleConstant.v(expr.numerator.int.toDouble() / expr.denominator.int.toDouble()))
     expr.isString -> JConstant(StringConstant.v(expr.string))
     expr.isBool && expr.toString() == "true" -> JTrue
     expr.isBool && expr.toString() == "false" -> JFalse
@@ -329,19 +301,15 @@ fun Z3Solver.decode(expr: Expr): JExpression =
             expr.isOr -> expr.args.map(::decode).fold(JFalse, ::or)
             expr.isEq -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JEquals)
             expr.isNot && expr.args[0].isEq -> JCondition(decode(expr.args[0].args[0]), decode(expr.args[0].args[1]), JNotEquals)
-            expr.isGT || expr.isFPGT -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JGreaterThan)
-            expr.isGE || expr.isFPGE -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JGreaterOrEqual)
-            expr.isLT || expr.isFPLT -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JLessThan)
-            expr.isLE || expr.isFPLE -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JLessOrEqual)
+            expr.isGT -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JGreaterThan)
+            expr.isGE -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JGreaterOrEqual)
+            expr.isLT -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JLessThan)
+            expr.isLE -> JCondition(decode(expr.args[0]), decode(expr.args[1]), JLessOrEqual)
             expr.isNot -> not(decode(expr.args[0]))
             expr.isAdd -> JAdd(decode(expr.args[0]), decode(expr.args[1]))
             expr.isSub -> JSubtract(decode(expr.args[0]), decode(expr.args[1]))
             expr.isMul -> JMultiply(decode(expr.args[0]), decode(expr.args[1]))
             expr.isDiv -> JDivide(decode(expr.args[0]), decode(expr.args[1]))
-            expr.isFPAdd -> JAdd(decode(expr.args[1]), decode(expr.args[2]))
-            expr.isFPSub -> JSubtract(decode(expr.args[1]), decode(expr.args[2]))
-            expr.isFPMul -> JMultiply(decode(expr.args[1]), decode(expr.args[2]))
-            expr.isFPDiv -> JDivide(decode(expr.args[1]), decode(expr.args[2]))
             expr.isITE -> {
                 val condition = decode(expr.args[0])
                 val trueExpr = decode(expr.args[1])
@@ -353,22 +321,3 @@ fun Z3Solver.decode(expr: Expr): JExpression =
     } catch (e: Exception) {
         throw Exception("Failed to Z3-decode '$expr'", e)
     }
-
-val Expr.isFPGT get() = isApp && funcDecl.declKind == Z3_decl_kind.Z3_OP_FPA_GT
-val Expr.isFPGE get() = isApp && funcDecl.declKind == Z3_decl_kind.Z3_OP_FPA_GE
-val Expr.isFPLT get() = isApp && funcDecl.declKind == Z3_decl_kind.Z3_OP_FPA_LT
-val Expr.isFPLE get() = isApp && funcDecl.declKind == Z3_decl_kind.Z3_OP_FPA_LE
-val Expr.isFPAdd get() = isApp && funcDecl.declKind == Z3_decl_kind.Z3_OP_FPA_ADD
-val Expr.isFPSub get() = isApp && funcDecl.declKind == Z3_decl_kind.Z3_OP_FPA_SUB
-val Expr.isFPMul get() = isApp && funcDecl.declKind == Z3_decl_kind.Z3_OP_FPA_MUL
-val Expr.isFPDiv get() = isApp && funcDecl.declKind == Z3_decl_kind.Z3_OP_FPA_DIV
-val Expr.isFloatNum get() = funcDecl.declKind == Z3_decl_kind.Z3_OP_FPA_NUM
-
-fun constructDouble(num: FPNum): Double {
-    // Adapted from https://github.com/delcypher/jfs/blob/4cb90edfc3ea89ce5477a15a4102d7f3bb5bdb61/runtime/SMTLIB/SMTLIB/NativeFloat.cpp#L666
-    // (found via https://stackoverflow.com/questions/48930084/z3-smt-solver-how-can-i-extract-the-value-of-a-floating-point-number-in-fpa)
-    val sign = if (num.sign) 1L else 0L // true <=> negative <=> 1L
-    val exponent = num.getExponentInt64(true) // biased = true
-    val significand = num.significandUInt64
-    return Double.fromBits(significand or (exponent shl 52) or (sign shl 63))
-}
